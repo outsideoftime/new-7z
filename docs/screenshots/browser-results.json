@@ -1,0 +1,145 @@
+{
+  "date": "2026-11-03",
+  "browser": "151.0.7922.34",
+  "checks": [
+    {
+      "name": "主页与资源加载",
+      "result": "pass"
+    },
+    {
+      "name": "home-light axe",
+      "result": "pass"
+    },
+    {
+      "name": "archive-light axe",
+      "result": "pass"
+    },
+    {
+      "name": "排序、选择与目录范围",
+      "result": "pass"
+    },
+    {
+      "name": "无结果、清除与中文输入法组合",
+      "result": "pass"
+    },
+    {
+      "name": "image-preview-light axe",
+      "result": "pass"
+    },
+    {
+      "name": "图片只读预览与缩放",
+      "result": "pass"
+    },
+    {
+      "name": "text-preview-light axe",
+      "result": "pass"
+    },
+    {
+      "name": "文本预览、查找、编码与纯文本安全显示",
+      "result": "pass"
+    },
+    {
+      "name": "预览搜索范围、不支持格式及过大图片",
+      "result": "pass"
+    },
+    {
+      "name": "读取失败与恢复",
+      "result": "pass"
+    },
+    {
+      "name": "create-dialog axe",
+      "result": "pass"
+    },
+    {
+      "name": "模态 Tab 隔离、Escape 与焦点恢复",
+      "result": "pass"
+    },
+    {
+      "name": "表单错误、密码显示、无密码草稿恢复",
+      "result": "pass"
+    },
+    {
+      "name": "任务创建、暂停、继续、跨页面运行与取消",
+      "result": "pass"
+    },
+    {
+      "name": "失败任务修改配置并重试",
+      "result": "pass"
+    },
+    {
+      "name": "tasks-light axe",
+      "result": "pass"
+    },
+    {
+      "name": "extract-dialog axe",
+      "result": "pass"
+    },
+    {
+      "name": "原生选择器键盘操作与解压校验",
+      "result": "pass"
+    },
+    {
+      "name": "conflict-dialog axe",
+      "result": "pass"
+    },
+    {
+      "name": "模拟任务完成",
+      "result": "pass"
+    },
+    {
+      "name": "settings-light axe",
+      "result": "pass"
+    },
+    {
+      "name": "图标导入、错误保留与恢复",
+      "result": "pass"
+    },
+    {
+      "name": "settings-dark axe",
+      "result": "pass"
+    },
+    {
+      "name": "archive-dark axe",
+      "result": "pass"
+    },
+    {
+      "name": "text-preview-dark axe",
+      "result": "pass"
+    },
+    {
+      "name": "窄视口各页面及短视口弹窗",
+      "result": "pass"
+    },
+    {
+      "name": "减少动态效果与全局滚动条",
+      "result": "pass"
+    },
+    {
+      "name": "清空历史与空状态",
+      "result": "pass"
+    },
+    {
+      "name": "本地直接打开与图库完整性",
+      "result": "pass"
+    },
+    {
+      "name": "浏览器运行时错误",
+      "result": "pass"
+    }
+  ],
+  "screenshots": [
+    "01-主页.png",
+    "02-压缩包浏览.png",
+    "03-新建压缩.png",
+    "04-解压到.png",
+    "05-任务中心.png",
+    "06-外观与图标-浅色.png",
+    "07-外观与图标-深色.png",
+    "08-同名冲突.png",
+    "09-压缩包浏览-深色.png",
+    "10-窄视口.png",
+    "11-图片预览.png",
+    "12-文本预览.png",
+    "13-文本预览-深色.png"
+  ]
+}

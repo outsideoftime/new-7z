@@ -1,0 +1,35 @@
+name: Windows x64 build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Get Inno Setup compiler
+        shell: pwsh
+        run: ./scripts/get-build-tools.ps1
+      - name: Build self-contained installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1
+      - name: Verify archive engine
+        shell: pwsh
+        run: ./scripts/test.ps1
+      - name: Verify native menu preferences
+        shell: pwsh
+        run: ./scripts/test-shell-preferences.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: New7z-windows-x64
+          path: |
+            artifacts/releases/*-x64-Setup.exe
+            artifacts/releases/SHA256SUMS.txt
+            artifacts/releases/release-manifest.json

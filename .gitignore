@@ -1,0 +1,32 @@
+node_modules/
+.venv/
+__pycache__/
+prototype/test-results/
+src/**/bin/
+src/**/obj/
+tests/**/bin/
+tests/**/obj/
+artifacts/
+# Keep the complete upstream source archive, licenses and bootstrap extractor.
+/7zSdk/*
+!/7zSdk/7z2605-src.7z
+!/7zSdk/DOC/
+!/7zSdk/bin/
+/7zSdk/bin/*
+!/7zSdk/bin/x64/
+/7zSdk/bin/x64/*
+!/7zSdk/bin/x64/7zr.exe
+# Local runtime evidence may contain personal file paths or desktop captures.
+docs/*integration.json
+docs/installer-tests.json
+docs/popup-close-tests.json
+docs/performance-*.json
+docs/native-integration.txt
+docs/shell-evidence/
+*.pfx
+*.p12
+*.pem
+*.key
+*.user
+*.suo
+.vs/

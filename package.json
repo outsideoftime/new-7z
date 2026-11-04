@@ -1,0 +1,15 @@
+{
+  "name": "new7z-design-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "New7z 本地交互原型与设计验证；不包含压缩引擎接入",
+  "scripts": {
+    "check": "node --check prototype/app.js && node --check prototype/preview.js && node --check prototype/context-menu.js && node --check prototype/context-menu-app.js && node --check prototype/context-menu-design.js",
+    "verify": "node prototype/browser-check.cjs",
+    "verify:menus": "node prototype/context-menu-check.cjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "playwright": "^1.56.0"
+  }
+}

@@ -1,0 +1,5 @@
+<linker>
+  <!-- XAML's runtime bindings and request/settings models must remain available. -->
+  <assembly fullname="New7z.App" preserve="all" />
+  <assembly fullname="New7z.Core" preserve="all" />
+</linker>

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows10.0.26100.0</TargetFramework><TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>New7z.App</RootNamespace><ApplicationManifest>app.manifest</ApplicationManifest><Platforms>x64</Platforms><PlatformTarget>x64</PlatformTarget><RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationIcon>Assets/New7z.ico</ApplicationIcon>
+    <UseWinUI>true</UseWinUI><WindowsPackageType>None</WindowsPackageType><WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained><WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize><EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TrimRelease)' == 'true'">
+    <PublishTrimmed>true</PublishTrimmed><TrimMode>partial</TrimMode>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TrimRelease)' == 'true'"><TrimmerRootDescriptor Include="TrimmerRoots.xml" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260803003" /><ProjectReference Include="../New7z.Core/New7z.Core.csproj" /></ItemGroup>
+  <ItemGroup><Content Update="Assets/New7z.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../installer/Integrate-Shell.ps1" Link="Installer/Integrate-Shell.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../图标/logo.png" Link="Assets/logo.png" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../artifacts/native/x64/*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /><Content Include="../../7zSdk/Source/DOC/License.txt" Link="Licenses/7-Zip-License.txt" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../7zSdk/Source/DOC/copying.txt" Link="Licenses/LGPL.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <!-- Unpackaged publish does not automatically include the app PRI/XBF in this SDK. -->
+  <Target Name="IncludeUnpackagedXamlResources" AfterTargets="ComputeFilesToPublish" Condition="'$(WindowsPackageType)' == 'None'">
+    <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')" Text="The application PRI was not generated; publishing an unusable UI is not allowed." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri">
+        <RelativePath>$(AssemblyName).pri</RelativePath><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <!-- Sparse identity activation also searches for the conventional resource index. -->
+      <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri">
+        <RelativePath>resources.pri</RelativePath><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <_New7zCompiledXaml Include="$(TargetDir)**\*.xbf" />
+      <ResolvedFileToPublish Include="@(_New7zCompiledXaml)">
+        <RelativePath>%(RecursiveDir)%(Filename)%(Extension)</RelativePath><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>主页 · New7z</title>
+  <link rel="icon" href="../图标/logo.png">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="desktop-label"><span>New7z</span><span>Windows 11 · 功能与交互设计 / v0.1</span></div>
+  <div class="window">
+    <header class="titlebar">
+      <div class="brand"><img class="brand-image" src="../图标/logo.png" alt=""><strong>New7z</strong><span class="preview-tag">设计预览</span></div>
+      <div class="caption-controls" aria-hidden="true"><span>─</span><span>□</span><span>×</span></div>
+    </header>
+    <div class="workspace">
+      <nav class="sidebar" aria-label="主导航">
+        <div class="nav-main" id="nav-main"></div>
+        <div class="sidebar-bottom"><div class="local-note" id="local-note"></div><button onclick="handleClick(event)" class="nav-button" data-page="settings" title="设置"><span id="settings-icon"></span><span class="nav-label">设置</span></button></div>
+      </nav>
+      <main id="main" tabindex="-1"></main>
+    </div>
+    <footer class="statusbar"><span><span class="status-dot"></span> 本地交互原型</span><span>示例数据 · 压缩与解压为模拟任务</span><span id="footer-state">就绪</span></footer>
+  </div>
+  <div class="review-note"><span>更熟悉的文件操作，更轻松的压缩体验。</span><a href="../docs/功能设计.md">功能设计 ↗</a><a href="../docs/原型设计.md">原型说明 ↗</a></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+  <div id="notification" class="notification" role="status" aria-live="polite"></div>
+  <input id="icon-picker" type="file" accept="image/png,image/x-icon,image/vnd.microsoft.icon,.ico" hidden>
+  <input id="source-picker" type="file" multiple hidden>
+  <script src="app.js"></script>
+  <script src="preview.js"></script>
+  <script src="context-menu.js"></script>
+  <script src="context-menu-app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["prototype"],
+  "locale": "zh-CN",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Table Selection", "Select/Listbox", "Form", "Scrollbar", "Toast", "CRUD"],
+  "ownership": { "Select/Listbox": "native" },
+  "requiredCommands": ["syntax", "browser", "menus"],
+  "commands": { "syntax": "npm run check", "browser": "npm run verify", "menus": "npm run verify:menus" },
+  "evidence": {
+    "crudFullFlow": "prototype/browser-check.cjs",
+    "failurePaths": "prototype/browser-check.cjs"
+  }
+}

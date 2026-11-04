@@ -1,0 +1,4 @@
+LIBRARY "New7z.Shell.dll"
+EXPORTS
+ DllGetClassObject PRIVATE
+ DllCanUnloadNow PRIVATE

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>右键菜单设计 · New7z</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="context-menu-design.css"></head>
+<body>
+<main class="menu-review">
+  <header class="review-header"><div class="review-brand"><img src="../图标/logo.png" width="36" height="36" alt=""><div><h1>右键菜单</h1><p>按选中内容呈现命令，让常用操作触手可及。</p></div></div><div class="actions"><label for="review-theme">显示模式</label><select id="review-theme"><option value="light">浅色</option><option value="dark">深色</option></select><a class="btn" href="index.html">返回应用原型 ↗</a></div></header>
+  <div class="review-layout"><aside class="review-scenarios"><h2>应用内</h2><nav id="app-scenarios" aria-label="应用内菜单场景"></nav><h2>Windows 资源管理器</h2><nav id="shell-scenarios" aria-label="资源管理器菜单场景"></nav><p class="review-aside-note">资源管理器区域为设计演示，不会注册系统菜单或操作文件。</p><a href="../docs/右键菜单设计.md">查看完整设计说明 ↗</a></aside>
+  <section class="review-body"><header class="review-scene-header"><div><span class="pill" id="scene-kind">应用内</span><h2 id="scene-title"></h2><p id="scene-description"></p></div><button onclick="reviewMenu.open()" class="btn primary" type="button" id="show-menu">显示菜单</button></header>
+    <section class="review-stage" id="review-stage" aria-label="菜单场景预览"><div class="stage-titlebar"><span id="stage-brand">New7z</span><span aria-hidden="true">─　 □　 ×</span></div><div class="stage-breadcrumb" id="stage-breadcrumb"></div><div class="stage-commandbar" id="stage-commandbar"></div><div class="stage-table"><div class="stage-table-head"><span>名称</span><span>类型</span><span>大小</span></div><div id="stage-rows"></div></div><div class="stage-hint" id="stage-hint"></div></section>
+    <div class="review-rules"><article><span>选择范围</span><p id="scope-rule"></p></article><article><span>默认行为</span><p id="default-rule"></p></article><article><span>交互方式</span><p>右键、菜单按钮或 Shift+F10；方向键移动，Enter 执行，Esc 返回。</p></article></div>
+    <div class="review-command-result" role="status" aria-live="polite" id="command-result">选择场景，体验右键菜单。所有命令仅演示设计结果。</div>
+  </section></div>
+  <footer class="review-footer"><span>设计稿 v0.1 · 2026-11-03</span><span>原生实现采用 CommandBarFlyout / MenuFlyout；Shell 集成为后续独立模块。</span></footer>
+</main>
+<script src="context-menu.js"></script><script src="context-menu-design.js"></script>
+</body></html>

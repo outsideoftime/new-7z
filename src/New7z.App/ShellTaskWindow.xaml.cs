@@ -161,12 +161,13 @@ public sealed partial class ShellTaskWindow:Window
     private async Task RunAsync()
     {
         if(running)return;running=true;cancellation.Dispose();cancellation=new();
-        TaskScrollViewer.VerticalAlignment=VerticalAlignment.Stretch;
+        TaskScrollViewer.VerticalAlignment=VerticalAlignment.Top;
         Configuration.Visibility=Visibility.Collapsed;StartButton.Visibility=Visibility.Collapsed;
         RetryButton.Visibility=Visibility.Collapsed;FolderButton.Visibility=Visibility.Collapsed;Message.IsOpen=false;
         ProgressSection.Visibility=Visibility.Visible;Progress.IsIndeterminate=true;Progress.Value=0;PercentText.Text="";
-        CancelButton.Content="取消任务";CancelButton.IsEnabled=true;Resize(false);
+        CancelButton.Content="取消任务";CancelButton.IsEnabled=true;
         DestinationText.Text=(request!.Action=="test"?"位置：":"保存到：")+destination;
+        Root.DispatcherQueue.TryEnqueue(ResizeToContent);
         bool succeeded=false;
         try
         {

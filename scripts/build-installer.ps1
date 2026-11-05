@@ -16,6 +16,13 @@ try{
  $trim=if($Untrimmed){'false'}else{'true'}
  & dotnet publish src/New7z.App/New7z.App.csproj -c Release -p:Platform=x64 "-p:TrimRelease=$trim" --self-contained true -o $payload
  if($LASTEXITCODE){throw 'Release publish failed.'}
+ # Debugger-only runtime files and WinUI UI strings for languages this app never uses.
+ Get-ChildItem -LiteralPath $payload -File | Where-Object {$_.Name -match '^(mscordaccore.*|mscordbi|Microsoft\.DiaSymReader\.Native\.amd64)\.dll$'} | Remove-Item -Force
+ foreach($directory in Get-ChildItem -LiteralPath $payload -Directory){
+  if($directory.Name -notmatch '^[a-z]{2,3}(-[A-Za-z]{2,8})*$' -or $directory.Name -in @('zh-CN','en-US')){continue}
+  $kept=@(Get-ChildItem -LiteralPath $directory.FullName -Recurse -File -Force | Where-Object {$_.Extension -ne '.mui'})
+  if($kept.Count -eq 0){Remove-Item -LiteralPath $directory.FullName -Recurse -Force}
+ }
  Copy-Item -LiteralPath 'artifacts/native/x64/New7z.ShellHost.exe' -Destination "$payload/New7z.ShellHost.exe" -Force
  New-Item -ItemType Directory -Path "$payload/Licenses/Source" -Force | Out-Null
  Copy-Item -LiteralPath "$projectRoot/LICENSE" -Destination "$payload/Licenses/New7z-MIT.txt" -Force

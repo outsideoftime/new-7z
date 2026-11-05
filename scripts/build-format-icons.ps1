@@ -153,7 +153,7 @@ New-Item -ItemType Directory -Path $folder -Force | Out-Null
 $boxes=[FormatIconExtractor]::FindIcons($collection)
 if($boxes.Count -lt 10){throw "Format icon sheet has $($boxes.Count) tiles; expected at least 10."}
 $largest=$boxes[0]
-$grid=@($boxes[1..9] | Sort-Object { $_[1] }, { $_[0] })
+$grid=@($boxes[1..9] | Sort-Object { [int]($_[1]/200) }, { $_[0] })
 $names=@('7z','rar','tar','gz','bz2','xz','iso','zst','xar')
 $map=@{ zip=$largest }
 for($i=0;$i -lt $names.Count;$i++){$map[$names[$i]]=$grid[$i]}
@@ -163,7 +163,8 @@ foreach($name in $supported){
  $box=$map[$name]
  if($null -eq $box){throw "Format icon $name was not found in the sheet."}
  $png=[FormatIconExtractor]::Extract($collection,$box[0],$box[1],$box[2],$box[3],0.06,256)
- [IO.File]::WriteAllBytes((Join-Path $folder "$name.png"),$png)
+ $uiPng=[FormatIconExtractor]::Extract($collection,$box[0],$box[1],$box[2],$box[3],0.06,128)
+ [IO.File]::WriteAllBytes((Join-Path $folder "$name.png"),$uiPng)
  $image=[Drawing.Image]::FromStream([IO.MemoryStream]::new($png))
  try {
   $frames=@(foreach($size in @(16,24,32,48,64,128,256)){

@@ -15,6 +15,10 @@ internal static class NativeMethods
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzCreate(string path, int zip, int level, string? password, int encryptNames,
         [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=7)] string[] paths,
         [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=7)] string[] names, uint count, ProgressCallback progress, IntPtr context);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzUpdate(string path, string output, string? password, int zip,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.U4,SizeParamIndex=5)] uint[] removeIndices, uint removeCount,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=8)] string[] addPaths,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=8)] string[] addNames, uint addCount, ProgressCallback progress, IntPtr context);
     [DllImport("shell32.dll")] internal static extern void SHChangeNotify(uint eventId,uint flags,IntPtr item1,IntPtr item2);
 
     internal static void NotifyShellAssociationsChanged()=>SHChangeNotify(0x08000000,0x1000,IntPtr.Zero,IntPtr.Zero);

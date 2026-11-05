@@ -29,6 +29,7 @@ public sealed class UserSettings
 {
     public string Theme {get;set;}="系统";
     public string? IconPath {get;set;}
+    public bool AutoCheckUpdates {get;set;}=true;
     public List<string> Recent {get;set;}=[];
     public static string Folder=>System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"New7z");
     public static UserSettings Load(){try{return System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(System.IO.Path.Combine(Folder,"settings.json")),AppJsonContext.Default.UserSettings)??new();}catch{return new();}}

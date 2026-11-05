@@ -7,6 +7,7 @@ namespace New7z.Core;
 
 public enum ConflictPolicy { Rename, Skip, Replace }
 public sealed record ExtractionResult(int Extracted, int Skipped);
+public sealed record SourceItem(string Path, string Name);
 
 public sealed class ArchiveEngine
 {
@@ -35,6 +36,7 @@ public sealed class ArchiveEngine
             unchecked((int)0x80040201) => new ArchivePasswordException(),
             unchecked((int)0x80040202) => new IOException("文件超过预览或解压大小限制。请先选择合适的输出位置解压。"),
             unchecked((int)0x80040203) => new InvalidDataException("文件损坏、校验失败或不是受支持的压缩包。"),
+            unchecked((int)0x80040204) => new IOException("这种压缩包格式不支持修改。仅支持 7z 和 ZIP。"),
             _ => new IOException($"文件操作失败（0x{code:X8}）：{Marshal.GetExceptionForHR(code)?.Message}")
         };
     }
@@ -69,22 +71,13 @@ public sealed class ArchiveEngine
         if(sources.Count==0)throw new ArgumentException("请选择要压缩的文件或文件夹。");
         output=System.IO.Path.GetFullPath(output);
         if(File.Exists(output)||Directory.Exists(output))throw new IOException("输出名称已存在，请更换名称，避免覆盖。");
-        var paths=new List<string>();var names=new List<string>();var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var paths=new List<string>();var names=new List<string>();
         foreach(var source in sources.Select(System.IO.Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             cancellation.ThrowIfCancellationRequested();
             if(Directory.Exists(source)&&output.StartsWith(source.TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase))throw new IOException("压缩包不能保存到来源文件夹内部。");
-            void Add(string full,string name)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                if(File.GetAttributes(full).HasFlag(FileAttributes.ReparsePoint))throw new IOException($"暂不打包符号链接或重解析点：{name}");
-                if(!used.Add(name))throw new IOException($"来源包含重名项目：{name}。请分开打包或选择上级目录。");
-                if(paths.Count>=1000000)throw new IOException("文件数量超过首版处理上限。");
-                paths.Add(full);names.Add(name.Replace('\\','/'));
-                if(Directory.Exists(full))foreach(var item in Directory.EnumerateFileSystemEntries(full))Add(item,System.IO.Path.Combine(name,System.IO.Path.GetFileName(item)));
-            }
-            Add(source,System.IO.Path.GetFileName(source.TrimEnd('\\','/')));
         }
+        foreach(var item in ExpandSources(sources,null,cancellation)){paths.Add(item.Path);names.Add(item.Name);}
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(output)!);
         var temp=output+"."+Guid.NewGuid().ToString("N")+".partial";
         try
@@ -98,6 +91,48 @@ public sealed class ArchiveEngine
             cancellation.ThrowIfCancellationRequested();File.Move(temp,output,false);
         }
         finally { if(File.Exists(temp))File.Delete(temp); }
+    },cancellation);
+
+    public static bool SupportsUpdate(string path)=>System.IO.Path.GetExtension(path).ToLowerInvariant() is ".7z" or ".zip";
+
+    public static IReadOnlyList<SourceItem> ExpandSources(IReadOnlyList<string> sources,string? folder=null,CancellationToken cancellation=default)
+    {
+        var items=new List<SourceItem>();var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var prefix=string.IsNullOrEmpty(folder)?"":folder.Replace('\\','/').Trim('/')+"/";
+        void Add(string full,string name)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if(File.GetAttributes(full).HasFlag(FileAttributes.ReparsePoint))throw new IOException($"暂不打包符号链接或重解析点：{name}");
+            if(!used.Add(name))throw new IOException($"来源包含重名项目：{name}。请分开打包或选择上级目录。");
+            if(items.Count>=1000000)throw new IOException("文件数量超过首版处理上限。");
+            items.Add(new(full,name.Replace('\\','/')));
+            if(Directory.Exists(full))foreach(var item in Directory.EnumerateFileSystemEntries(full))Add(item,System.IO.Path.Combine(name,System.IO.Path.GetFileName(item)));
+        }
+        foreach(var source in sources.Select(System.IO.Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase))
+            Add(source,prefix+System.IO.Path.GetFileName(source.TrimEnd('\\','/')));
+        return items;
+    }
+
+    // Rewrites the archive to a temporary file, dropping the given entry indices and appending
+    // the sources, then swaps the result in only after the engine completed successfully.
+    public Task ModifyAsync(string archive,IReadOnlyList<uint> removeIndices,IReadOnlyList<SourceItem> additions,string? password=null,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default) => Task.Run(()=>
+    {
+        archive=System.IO.Path.GetFullPath(archive);
+        if(!SupportsUpdate(archive))throw new IOException("当前只支持修改 7z 和 ZIP 压缩包。");
+        var zip=System.IO.Path.GetExtension(archive).ToLowerInvariant()==".zip";
+        if(removeIndices.Count==0&&additions.Count==0)return;
+        if(!File.Exists(archive))throw new FileNotFoundException("压缩包不存在。",archive);
+        var temp=archive+"."+Guid.NewGuid().ToString("N")+".partial";
+        try
+        {
+            var callback=Callback(cancellation,progress);
+            Check(NativeMethods.NzUpdate(archive,temp,password,zip?1:0,removeIndices.ToArray(),(uint)removeIndices.Count,
+                additions.Select(a=>a.Path).ToArray(),additions.Select(a=>a.Name).ToArray(),(uint)additions.Count,callback,IntPtr.Zero),cancellation);
+            GC.KeepAlive(callback);
+            cancellation.ThrowIfCancellationRequested();
+            File.Move(temp,archive,true);
+        }
+        finally{if(File.Exists(temp))File.Delete(temp);}
     },cancellation);
 
     public async Task<ExtractionResult> ExtractAsync(string archive,IReadOnlyList<ArchiveEntry> entries,string destination,ConflictPolicy policy=ConflictPolicy.Rename,string? password=null,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default)

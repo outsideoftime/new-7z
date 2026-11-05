@@ -12,7 +12,7 @@
 #include "../7zSdk/Source/CPP/7zip/IPassword.h"
 
 using Progress = int(__cdecl*)(unsigned long long, unsigned long long, void*);
-constexpr HRESULT PasswordRequired=HRESULT(0x80040201), SizeLimit=HRESULT(0x80040202), DataInvalid=HRESULT(0x80040203);
+constexpr HRESULT PasswordRequired=HRESULT(0x80040201), SizeLimit=HRESULT(0x80040202), DataInvalid=HRESULT(0x80040203), UpdateUnsupported=HRESULT(0x80040204);
 using Creator=HRESULT(WINAPI*)(const GUID*,const GUID*,void**);
 using HandlerProp=HRESULT(WINAPI*)(UInt32,PROPID,PROPVARIANT*);
 static HMODULE engine=nullptr;
@@ -100,6 +100,12 @@ public:
   METHOD(SetOperationResult,(Int32 r)){if(r!=NArchive::NExtract::NOperationResult::kOK)result=(r==NArchive::NExtract::NOperationResult::kWrongPassword||status.passwordAsked)?PasswordRequired:DataInvalid;return result;}
   METHOD(CryptoGetTextPassword,(BSTR* pw)){return status.getPassword(pw);}
 };
+static HRESULT fillNewItemProperty(const wchar_t* path,const wchar_t* name,PROPID prop,PROPVARIANT* value){
+  PropVariantInit(value);WIN32_FILE_ATTRIBUTE_DATA info;
+  if(!GetFileAttributesExW(path,GetFileExInfoStandard,&info))return HRESULT_FROM_WIN32(GetLastError());
+  switch(prop){case kpidPath:value->vt=VT_BSTR;value->bstrVal=SysAllocString(name);break;case kpidIsDir:value->vt=VT_BOOL;value->boolVal=(info.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)?VARIANT_TRUE:VARIANT_FALSE;break;case kpidSize:value->vt=VT_UI8;value->uhVal.QuadPart=(UInt64(info.nFileSizeHigh)<<32)|info.nFileSizeLow;break;case kpidAttrib:value->vt=VT_UI4;value->ulVal=info.dwFileAttributes;break;case kpidMTime:value->vt=VT_FILETIME;value->filetime=info.ftLastWriteTime;break;}
+  return S_OK;
+}
 class UpdateCallback final:public IArchiveUpdateCallback,public ICryptoGetTextPassword2 {
   Status& status;const wchar_t* const* paths;const wchar_t* const* names;
 public:
@@ -110,8 +116,26 @@ public:
   METHOD(SetTotal,(UInt64 value)){status.total=value;return status.report(0);}
   METHOD(SetCompleted,(const UInt64* value)){return status.report(value?*value:0);}
   METHOD(GetUpdateItemInfo,(UInt32,Int32* data,Int32* props,UInt32* index)){*data=1;*props=1;*index=UInt32(-1);return status.report(0);}
-  METHOD(GetProperty,(UInt32 i,PROPID prop,PROPVARIANT* value)){PropVariantInit(value);WIN32_FILE_ATTRIBUTE_DATA info;if(!GetFileAttributesExW(paths[i],GetFileExInfoStandard,&info))return HRESULT_FROM_WIN32(GetLastError());switch(prop){case kpidPath:value->vt=VT_BSTR;value->bstrVal=SysAllocString(names[i]);break;case kpidIsDir:value->vt=VT_BOOL;value->boolVal=(info.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)?VARIANT_TRUE:VARIANT_FALSE;break;case kpidSize:value->vt=VT_UI8;value->uhVal.QuadPart=(UInt64(info.nFileSizeHigh)<<32)|info.nFileSizeLow;break;case kpidAttrib:value->vt=VT_UI4;value->ulVal=info.dwFileAttributes;break;case kpidMTime:value->vt=VT_FILETIME;value->filetime=info.ftLastWriteTime;break;}return S_OK;}
+  METHOD(GetProperty,(UInt32 i,PROPID prop,PROPVARIANT* value)){return fillNewItemProperty(paths[i],names[i],prop,value);}
   METHOD(GetStream,(UInt32 i,ISequentialInStream** stream)){*stream=nullptr;if(FAILED(status.report(0)))return E_ABORT;if(GetFileAttributesW(paths[i])&FILE_ATTRIBUTE_DIRECTORY)return S_OK;auto input=new Input(paths[i]);if(!input->valid()){input->Release();return HRESULT_FROM_WIN32(GetLastError());}*stream=input;return S_OK;}
+  METHOD(SetOperationResult,(Int32 r)){if(r!=0)result=E_FAIL;return result;}
+  METHOD(CryptoGetTextPassword2,(Int32* defined,BSTR* pw)){*defined=status.password.empty()?0:1;*pw=*defined?SysAllocString(status.password.c_str()):nullptr;return S_OK;}
+};
+// Rewrites the archive as a new file, copying every entry except the removed indices and
+// appending new sources. The caller replaces the original only after this succeeds.
+struct UpdateItem{int isNew;UInt32 indexInArchive;const wchar_t* path;const wchar_t* name;};
+class RewriteCallback final:public IArchiveUpdateCallback,public ICryptoGetTextPassword2 {
+  Status& status;const UpdateItem* items;UInt32 count;
+public:
+  HRESULT result=S_OK;
+  RewriteCallback(Status& s,const UpdateItem* i,UInt32 c):status(s),items(i),count(c){}
+  REFS
+  METHOD(QueryInterface,(REFIID iid,void** out)){*out=nullptr;if(iid==IID_IUnknown||iid==IID_IArchiveUpdateCallback||iid==IID_IProgress)*out=static_cast<IArchiveUpdateCallback*>(this);else if(iid==IID_ICryptoGetTextPassword2)*out=static_cast<ICryptoGetTextPassword2*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
+  METHOD(SetTotal,(UInt64 value)){status.total=value;return status.report(0);}
+  METHOD(SetCompleted,(const UInt64* value)){return status.report(value?*value:0);}
+  METHOD(GetUpdateItemInfo,(UInt32 i,Int32* data,Int32* props,UInt32* index)){if(i>=count)return E_INVALIDARG;const auto& item=items[i];if(item.isNew){*data=1;*props=1;*index=UInt32(-1);}else{*data=0;*props=0;*index=item.indexInArchive;}return status.report(0);}
+  METHOD(GetProperty,(UInt32 i,PROPID prop,PROPVARIANT* value)){if(i>=count||!items[i].isNew){PropVariantInit(value);return S_OK;}return fillNewItemProperty(items[i].path,items[i].name,prop,value);}
+  METHOD(GetStream,(UInt32 i,ISequentialInStream** stream)){*stream=nullptr;if(i>=count)return E_INVALIDARG;if(!items[i].isNew)return S_OK;if(FAILED(status.report(0)))return E_ABORT;const wchar_t* path=items[i].path;if(GetFileAttributesW(path)&FILE_ATTRIBUTE_DIRECTORY)return S_OK;auto input=new Input(path);if(!input->valid()){input->Release();return HRESULT_FROM_WIN32(GetLastError());}*stream=input;return S_OK;}
   METHOD(SetOperationResult,(Int32 r)){if(r!=0)result=E_FAIL;return result;}
   METHOD(CryptoGetTextPassword2,(Int32* defined,BSTR* pw)){*defined=status.password.empty()?0:1;*pw=*defined?SysAllocString(status.password.c_str()):nullptr;return S_OK;}
 };
@@ -121,4 +145,49 @@ API int __cdecl NzList(const wchar_t* path,const wchar_t* password,wchar_t** jso
 API int __cdecl NzExtract(const wchar_t* path,const wchar_t* password,UInt32 index,const wchar_t* output,UInt64 limit,unsigned char** data,UInt64* size,Progress progress,void* ctx){if(data)*data=nullptr;if(size)*size=0;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Variant property;a.archive->GetProperty(index,kpidSize,&property.v);if(number(property.v)>limit)return SizeLimit;Ptr<Output> stream;stream.p=new Output(output,limit);if(!stream->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,stream.p);hr=a.archive->Extract(&index,1,0,callback.p);if(FAILED(hr))return a.status.passwordAsked&&hr!=E_ABORT?PasswordRequired:hr;if(FAILED(callback->result))return callback->result;if(!output&&data&&size){*size=stream->bytes.size();*data=static_cast<unsigned char*>(CoTaskMemAlloc(size_t(*size?*size:1)));if(!*data)return E_OUTOFMEMORY;if(*size)memcpy(*data,stream->bytes.data(),size_t(*size));}return S_OK;}catch(...){return E_OUTOFMEMORY;}}
 API int __cdecl NzTest(const wchar_t* path,const wchar_t* password,Progress progress,void* ctx){try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,nullptr);hr=a.archive->Extract(nullptr,UInt32(-1),1,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
 API int __cdecl NzCreate(const wchar_t* path,int zip,int level,const wchar_t* password,int encryptNames,const wchar_t* const* paths,const wchar_t* const* names,UInt32 count,Progress progress,void* ctx){try{if(!createObject)return E_UNEXPECTED;GUID cls={0x23170F69,0x40C1,0x278A,{0x10,0,0,1,0x10,BYTE(zip?1:7),0,0}};Ptr<IOutArchive> archive;HRESULT hr=createObject(&cls,&IID_IOutArchive,reinterpret_cast<void**>(archive.out()));if(FAILED(hr))return hr;Ptr<ISetProperties> props;if(SUCCEEDED(archive->QueryInterface(IID_ISetProperties,reinterpret_cast<void**>(props.out())))){const wchar_t* keys[]={L"x",L"he",L"em"};PROPVARIANT values[3]{};values[0].vt=VT_UI4;values[0].ulVal=level;values[1].vt=VT_BOOL;values[1].boolVal=encryptNames?VARIANT_TRUE:VARIANT_FALSE;values[2].vt=VT_BSTR;values[2].bstrVal=SysAllocString(L"AES256");if(zip){const wchar_t* zipKeys[]={keys[0],keys[2]};PROPVARIANT zipValues[]={values[0],values[2]};hr=props->SetProperties(zipKeys,zipValues,password&&*password?2:1);}else hr=props->SetProperties(keys,values,password&&*password?2:1);PropVariantClear(&values[2]);if(FAILED(hr))return hr;}Status status(password,progress,ctx);Ptr<Output> output;output.p=new Output(path,UINT64_MAX);if(!output->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<UpdateCallback> callback;callback.p=new UpdateCallback(status,paths,names);hr=archive->UpdateItems(output.p,count,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
+API int __cdecl NzUpdate(const wchar_t* path,const wchar_t* output,const wchar_t* password,int zip,const UInt32* removeIndices,UInt32 removeCount,const wchar_t* const* addPaths,const wchar_t* const* addNames,UInt32 addCount,Progress progress,void* ctx){
+  try{
+    if(!createObject)return E_UNEXPECTED;
+    Archive a(password,progress,ctx);
+    HRESULT hr=a.open(path);
+    if(FAILED(hr))return hr;
+    Ptr<IOutArchive> out;
+    if(FAILED(a.archive->QueryInterface(IID_IOutArchive,reinterpret_cast<void**>(out.out()))))return UpdateUnsupported;
+    // Keep an encrypted 7z header encrypted when the opened archive required the password.
+    if(!a.status.password.empty()&&a.status.passwordAsked){
+      Ptr<ISetProperties> props;
+      if(SUCCEEDED(out->QueryInterface(IID_ISetProperties,reinterpret_cast<void**>(props.out())))){
+        const wchar_t* keys[]={L"he"};PROPVARIANT value{};value.vt=VT_BOOL;value.boolVal=VARIANT_TRUE;props->SetProperties(keys,&value,1);
+      }
+    }
+    // ZIP defaults to ZipCrypto when only a password is given; keep AES-256 like archive creation.
+    if(zip&&password&&*password){
+      Ptr<ISetProperties> props;
+      if(SUCCEEDED(out->QueryInterface(IID_ISetProperties,reinterpret_cast<void**>(props.out())))){
+        const wchar_t* keys[]={L"em"};PROPVARIANT value{};value.vt=VT_BSTR;value.bstrVal=SysAllocString(L"AES256");
+        if(value.bstrVal){props->SetProperties(keys,&value,1);PropVariantClear(&value);}
+      }
+    }
+    UInt32 existing=0;
+    if(FAILED(hr=a.archive->GetNumberOfItems(&existing)))return hr;
+    if(existing>1000000||addCount>1000000)return SizeLimit;
+    std::vector<char> removed(existing,0);
+    for(UInt32 i=0;i<removeCount;i++){
+      if(removeIndices[i]>=existing)return E_INVALIDARG;
+      removed[removeIndices[i]]=1;
+    }
+    std::vector<UpdateItem> items;
+    items.reserve(static_cast<size_t>(existing)+addCount);
+    for(UInt32 i=0;i<existing;i++)if(!removed[i])items.push_back({0,i,nullptr,nullptr});
+    for(UInt32 i=0;i<addCount;i++)items.push_back({1,UInt32(-1),addPaths[i],addNames[i]});
+    Status status(password,progress,ctx);
+    Ptr<Output> outputStream;
+    outputStream.p=new Output(output,UINT64_MAX);
+    if(!outputStream->valid())return HRESULT_FROM_WIN32(GetLastError());
+    Ptr<RewriteCallback> callback;
+    callback.p=new RewriteCallback(status,items.data(),static_cast<UInt32>(items.size()));
+    hr=out->UpdateItems(outputStream.p,static_cast<UInt32>(items.size()),callback.p);
+    return FAILED(hr)?hr:callback->result;
+  }catch(...){return E_OUTOFMEMORY;}
+}
 

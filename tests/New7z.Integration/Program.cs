@@ -106,6 +106,60 @@ try
     var encryptedItems=await engine.ListAsync(encrypted,"password-测试");Assert(encryptedItems.Count>0,"encrypted header open");
     try{await engine.ReadAsync(encrypted,encryptedItems.First(e=>!e.IsDirectory),"wrong");throw new Exception("Wrong password accepted");}catch(ArchivePasswordException){checks.Add("wrong password rejected");}
     var encryptedZip=Path.Combine(root,"加密.zip");await engine.CreateAsync(encryptedZip,[text],"zip",password:"secret");var zipItems=await engine.ListAsync(encryptedZip);Assert((await engine.ReadAsync(encryptedZip,zipItems.Single(),"secret")).Length>0,"ZIP AES read");
+    foreach(var format in new[]{"7z","zip"})
+    {
+        var modifiable=Path.Combine(root,"修改."+format);
+        await engine.CreateAsync(modifiable,[source],format);
+        var before=await engine.ListAsync(modifiable);
+        var added=Path.Combine(root,"新增说明.txt");await File.WriteAllTextAsync(added,"新增内容",new UTF8Encoding(false));
+        var addedFolder=Path.Combine(root,"新增目录");Directory.CreateDirectory(Path.Combine(addedFolder,"子目录"));await File.WriteAllTextAsync(Path.Combine(addedFolder,"子目录","内.txt"),"嵌套");
+        var additions=ArchiveEngine.ExpandSources([added,addedFolder]);
+        await engine.ModifyAsync(modifiable,[],additions);
+        var afterAdd=await engine.ListAsync(modifiable);
+        Assert(afterAdd.Count==before.Count+additions.Count,format+" update adds items");
+        Assert(afterAdd.Any(e=>e.NormalizedPath=="新增说明.txt"),format+" update adds file");
+        Assert(afterAdd.Any(e=>e.NormalizedPath=="新增目录/子目录/内.txt"),format+" update adds nested folder");
+        Assert(ArchiveEngine.DecodeText(await engine.ReadAsync(modifiable,afterAdd.Single(e=>e.Name=="新增说明.txt")))== "新增内容",format+" update reads added file");
+        Assert((await engine.ReadAsync(modifiable,afterAdd.Single(e=>e.Name=="data.bin"))).SequenceEqual(original),format+" update keeps existing data");
+        await File.WriteAllTextAsync(added,"替换内容");
+        var replaceTarget=afterAdd.Single(e=>e.Name=="新增说明.txt");
+        await engine.ModifyAsync(modifiable,[replaceTarget.Index],ArchiveEngine.ExpandSources([added]));
+        var replaced=await engine.ListAsync(modifiable);
+        Assert(replaced.Count==afterAdd.Count,format+" replace keeps item count");
+        Assert(ArchiveEngine.DecodeText(await engine.ReadAsync(modifiable,replaced.Single(e=>e.Name=="新增说明.txt")))== "替换内容",format+" replace writes new data");
+        var nestedFile=Path.Combine(root,"嵌套新增.txt");await File.WriteAllTextAsync(nestedFile,"嵌套新增");
+        await engine.ModifyAsync(modifiable,[],ArchiveEngine.ExpandSources([nestedFile],"新增目录/子目录"));
+        Assert((await engine.ListAsync(modifiable)).Any(e=>e.NormalizedPath=="新增目录/子目录/嵌套新增.txt"),format+" update adds into an archive folder");
+        var noteIndex=replaced.Single(e=>e.Name=="说明.txt").Index;
+        var folderIndex=replaced.Single(e=>e.NormalizedPath=="新增目录/子目录"&&e.IsDirectory).Index;
+        await engine.ModifyAsync(modifiable,[noteIndex,folderIndex],[]);
+        var afterDelete=await engine.ListAsync(modifiable);
+        Assert(!afterDelete.Any(e=>e.NormalizedPath=="说明.txt"),format+" delete removes file");
+        Assert(!afterDelete.Any(e=>e.NormalizedPath=="新增目录/子目录"&&e.IsDirectory),format+" delete removes folder entry");
+        await engine.TestAsync(modifiable);checks.Add(format+" integrity after update");
+        var remaining=await engine.ListAsync(modifiable);
+        await engine.ModifyAsync(modifiable,remaining.Select(e=>e.Index).ToList(),[]);
+        Assert((await engine.ListAsync(modifiable)).Count==0,format+" delete all leaves an empty archive");
+    }
+    var secured=Path.Combine(root,"修改加密.7z");await engine.CreateAsync(secured,[source],password:"修改密码",encryptNames:true);
+    var securedEntries=await engine.ListAsync(secured,"修改密码");
+    var securedExtra=Path.Combine(root,"加密新增.txt");await File.WriteAllTextAsync(securedExtra,"加密新增");
+    await engine.ModifyAsync(secured,[securedEntries.Single(e=>e.Name=="说明.txt").Index],ArchiveEngine.ExpandSources([securedExtra]),"修改密码");
+    try{await engine.ListAsync(secured);throw new Exception("Updated 7z header was not encrypted");}catch(ArchivePasswordException){checks.Add("7z update keeps encrypted header");}
+    var securedAfter=await engine.ListAsync(secured,"修改密码");
+    Assert(!securedAfter.Any(e=>e.Name=="说明.txt")&&securedAfter.Any(e=>e.Name=="加密新增.txt"),"encrypted 7z update changes entries");
+    Assert((await engine.ReadAsync(secured,securedAfter.Single(e=>e.Name=="data.bin"),"修改密码")).SequenceEqual(original),"encrypted 7z update keeps data");
+    var securedZip=Path.Combine(root,"修改加密.zip");await engine.CreateAsync(securedZip,[text],"zip",password:"zip-pass");
+    await engine.ModifyAsync(securedZip,[],[new SourceItem(securedExtra,"加密新增.txt")],"zip-pass");
+    var securedZipEntries=await engine.ListAsync(securedZip);
+    Assert(securedZipEntries.Any(e=>e.Name=="加密新增.txt"),"encrypted ZIP update adds entry");
+    Assert((await engine.ReadAsync(securedZip,securedZipEntries.Single(e=>e.Name=="加密新增.txt"),"zip-pass")).Length>0,"encrypted ZIP update reads added entry");
+    Assert(ZipUsesAes(await File.ReadAllBytesAsync(securedZip)),"encrypted ZIP update keeps AES encryption");
+    var unsupportedFile=Path.Combine(root,"note.txt");await File.WriteAllTextAsync(unsupportedFile,"x");
+    var updateRefused=false;try{await engine.ModifyAsync(unsupportedFile,[],ArchiveEngine.ExpandSources([text]));}catch(IOException){updateRefused=true;}
+    Assert(updateRefused,"update refuses non-archive paths");
+    Assert(GitHubUpdateChecker.TryParseTag("v0.1.16",out var releaseVersion)&&releaseVersion==new Version(0,1,16),"update release tag parses");
+    Assert(!GitHubUpdateChecker.TryParseTag("nightly",out _),"update release tag rejects non-version tags");
     foreach(var unsafePath in new[]{"../escape.txt","/absolute.txt","C:\\escape.txt","file.txt:ads","CON.txt","trailing. "})
     {try{ArchiveEngine.ResolveOutput(root,unsafePath);throw new Exception("Unsafe path accepted: "+unsafePath);}catch(IOException){checks.Add("reject "+unsafePath);}}
     var malicious=Path.Combine(root,"malicious.zip");using(var zip=ZipFile.Open(malicious,ZipArchiveMode.Create)){using var writer=new StreamWriter(zip.CreateEntry("../escape.txt").Open());writer.Write("unsafe");}
@@ -118,4 +172,22 @@ try
 }
 finally {if(root.Length>0)Directory.Delete(root,true);}
 
+static bool ZipUsesAes(byte[] data)
+{
+    for(var i=0;i+46<data.Length;i++)
+    {
+        if(data[i]!=0x50||data[i+1]!=0x4b||data[i+2]!=1||data[i+3]!=2)continue;
+        int nameLength=BitConverter.ToUInt16(data,i+28),extraLength=BitConverter.ToUInt16(data,i+30);
+        var extra=i+46+nameLength;var end=Math.Min(data.Length,extra+extraLength);
+        for(var p=extra;p+4<=end;)
+        {
+            var id=BitConverter.ToUInt16(data,p);var size=BitConverter.ToUInt16(data,p+2);
+            if(id==0x9901)return true;
+            p+=4+size;
+        }
+    }
+    return false;
+}
+
 sealed class InlineProgress(Action<EngineProgress> callback):IProgress<EngineProgress>{public void Report(EngineProgress value)=>callback(value);}
+

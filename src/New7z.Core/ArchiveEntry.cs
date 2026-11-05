@@ -2,6 +2,30 @@ namespace New7z.Core;
 
 public sealed record ArchiveEntry
 {
+    private static readonly HashSet<string> ImageExtensions=new(StringComparer.OrdinalIgnoreCase){ ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".ico", ".tif", ".tiff" };
+    private static readonly HashSet<string> TextExtensions=new(StringComparer.OrdinalIgnoreCase){
+        // Documents and notes
+        ".txt", ".text", ".md", ".markdown", ".rst", ".adoc", ".asciidoc", ".log", ".csv", ".tsv", ".tex", ".bib", ".org", ".nfo",
+        // Data and configuration
+        ".json", ".jsonc", ".json5", ".xml", ".xsl", ".xslt", ".xsd", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".config",
+        ".properties", ".env", ".plist", ".reg", ".inf", ".manifest", ".resx", ".rss", ".atom", ".svg", ".sln", ".csproj", ".vbproj",
+        ".fsproj", ".props", ".targets", ".nuspec", ".iss", ".rc", ".def", ".cmake", ".gradle", ".mk", ".mak", ".gitignore",
+        ".gitattributes", ".editorconfig", ".npmrc", ".yarnrc", ".prettierrc", ".eslintrc", ".babelrc", ".dockerignore",
+        // Programming languages and scripts
+        ".c", ".cc", ".cxx", ".cpp", ".c++", ".h", ".hh", ".hpp", ".hxx", ".inl", ".m", ".mm", ".cs", ".fs", ".fsx", ".vb",
+        ".java", ".kt", ".kts", ".scala", ".sc", ".groovy", ".go", ".rs", ".swift", ".dart", ".py", ".pyw", ".pyi", ".rb",
+        ".php", ".pl", ".pm", ".lua", ".r", ".jl", ".nim", ".zig", ".v", ".sv", ".vhd", ".vhdl", ".tcl", ".awk", ".sed", ".asm",
+        ".s", ".inc", ".d", ".pas", ".pp", ".f", ".f90", ".f95", ".for", ".lisp", ".scm", ".rkt", ".ml", ".mli", ".hs", ".erl",
+        ".ex", ".exs", ".clj", ".cljs", ".elm", ".sol", ".proto", ".thrift", ".graphql", ".gql", ".tf", ".hcl", ".nix", ".bat",
+        ".cmd", ".ps1", ".psm1", ".psd1", ".vbs", ".vba", ".ahk", ".au3", ".ino", ".sh", ".bash", ".zsh", ".fish", ".js", ".mjs",
+        ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".css", ".scss", ".sass", ".less", ".styl", ".html", ".htm", ".xhtml",
+        ".vue", ".svelte", ".astro", ".razor", ".cshtml", ".xaml", ".axaml", ".sql", ".spl", ".diff", ".patch"
+    };
+    private static readonly HashSet<string> TextFileNames=new(StringComparer.OrdinalIgnoreCase){
+        "makefile", "gnumakefile", "cmakelists.txt", "dockerfile", "containerfile", "readme", "license", "licence", "copying", "notice",
+        "changelog", "changes", "authors", "contributors", "vagrantfile", "jenkinsfile", "procfile", "gemfile", "rakefile", "brewfile",
+        "podfile", "fastfile"
+    };
     public uint Index { get; init; }
     public string Path { get; init; } = "";
     public ulong Size { get; init; }
@@ -17,8 +41,8 @@ public sealed record ArchiveEntry
     public string SizeText => IsDirectory ? "文件夹" : ByteSize.Format(Size);
     public string PackedSizeText => PackedSize is { } n ? ByteSize.Format(n) : "—";
     public string ModifiedText => FileTime > 0 ? DateTime.FromFileTimeUtc(FileTime).ToLocalTime().ToString("yyyy/MM/dd HH:mm") : "—";
-    public bool IsImage => new[] { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif" }.Contains(Extension);
-    public bool IsText => new[] { ".txt", ".md", ".log", ".csv", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".js", ".ts", ".css", ".cs", ".cpp", ".h", ".html", ".htm", ".sql", ".sh", ".ps1" }.Contains(Extension);
+    public bool IsImage => ImageExtensions.Contains(Extension);
+    public bool IsText => TextExtensions.Contains(Extension) || TextFileNames.Contains(Name);
 }
 public static class ByteSize
 {

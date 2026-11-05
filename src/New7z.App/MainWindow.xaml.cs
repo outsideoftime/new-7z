@@ -51,6 +51,18 @@ public sealed partial class MainWindow:Window
             var arg=startupArchive??launchArgs.FirstOrDefault(File.Exists);if(arg!=null)await OpenArchiveAsync(arg);
         };
     }
+    private static ListViewItem? FindRowContainer(DependencyObject? source)
+    {
+        for(var current=source;current!=null;current=VisualTreeHelper.GetParent(current))
+            if(current is ListViewItem item)return item;
+        return null;
+    }
+    private static bool IsInsideCheckBox(DependencyObject? source)
+    {
+        for(var current=source;current!=null;current=VisualTreeHelper.GetParent(current))
+            if(current is CheckBox)return true;
+        return false;
+    }
     private static Image? FormatIcon(string path)
     {
         var name=System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
@@ -147,7 +159,7 @@ public sealed partial class MainWindow:Window
         fileList.ItemTemplate=(DataTemplate)XamlReader.Load("""
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><Grid MinHeight="48" ColumnSpacing="12" Padding="4,5"><Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/><ColumnDefinition Width="100"/><ColumnDefinition Width="145"/></Grid.ColumnDefinitions><FontIcon Glyph="{Binding Glyph}" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding Name}" ToolTipService.ToolTip="{Binding FullPath}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/><TextBlock Grid.Column="2" Text="{Binding SizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="3" Text="{Binding PackedSizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="4" Text="{Binding ModifiedText}" VerticalAlignment="Center" FontSize="12"/></Grid></DataTemplate>
         """);
-        fileList.DoubleTapped+=async(_,_)=>{if(fileList.SelectedItem is ArchiveRow row)await ActivateRowAsync(row.Entry);};fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}};
+        fileList.DoubleTapped+=async(_,e)=>{if(e.OriginalSource is DependencyObject source&&!IsInsideCheckBox(source)&&FindRowContainer(source)?.DataContext is ArchiveRow row)await ActivateRowAsync(row.Entry);};fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}};
         fileList.SelectionChanged+=(_,_)=>{countLabel!.Text=$"{CurrentRows().Count} 个项目 · 已选择 {fileList.SelectedItems.Count} 项";};Grid.SetRow(fileList,1);table.Children.Add(fileList);Grid.SetRow(table,3);grid.Children.Add(table);
         countLabel=Text("",12);Grid.SetRow(countLabel,4);grid.Children.Add(countLabel);ShowContent(grid);RefreshRows();
     }

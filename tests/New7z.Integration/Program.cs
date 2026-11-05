@@ -23,6 +23,9 @@ try
         reopened.Save(new ExplorerPreferences());Assert(store.Read()==new ExplorerPreferences(),"Explorer settings restore defaults");
     }
     finally{Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(preferencesKey,false);}
+    foreach(var (path,isText) in new[]{("src/app.cs",true),("script.py",true),("main.rs",true),("config.toml",true),("index.tsx",true),("Makefile",true),("README",true),("LICENSE",true),("photo.png",false),("setup.exe",false)})
+        Assert(new ArchiveEntry{Path=path}.IsText==isText,"text preview classification: "+path);
+    Assert(new ArchiveEntry{Path="icon.ico"}.IsImage&&new ArchiveEntry{Path="scan.tiff"}.IsImage,"image preview classification: ico/tiff");
     var compressPreferencesKey=@"Software\New7z.Tests\"+Guid.NewGuid().ToString("N");
     var compressBlockedKey=compressPreferencesKey+".Blocked";
     try

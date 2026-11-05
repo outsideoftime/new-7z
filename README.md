@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。作者：**王国梁**。当前预览版：**0.1.13**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。作者：**王国梁**。当前预览版：**0.1.14**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
@@ -34,6 +34,14 @@
 ![设置](docs/app-screenshots/05-设置.png)
 
 更多截图见 [docs/app-screenshots](docs/app-screenshots)。
+
+### 文件图标
+
+新版的格式图标：7z、ZIP、RAR、TAR、GZ、BZ2、XZ、ISO 各有独立图标，用于文件关联、「默认应用」和「最近使用」列表。
+
+| 7z | ZIP | RAR | TAR | GZ | BZ2 | XZ | ISO |
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| ![7z](src/New7z.App/Assets/Formats/7z.png) | ![ZIP](src/New7z.App/Assets/Formats/zip.png) | ![RAR](src/New7z.App/Assets/Formats/rar.png) | ![TAR](src/New7z.App/Assets/Formats/tar.png) | ![GZ](src/New7z.App/Assets/Formats/gz.png) | ![BZ2](src/New7z.App/Assets/Formats/bz2.png) | ![XZ](src/New7z.App/Assets/Formats/xz.png) | ![ISO](src/New7z.App/Assets/Formats/iso.png) |
 
 ## 常见问题
 

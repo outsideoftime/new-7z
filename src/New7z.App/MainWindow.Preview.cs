@@ -29,7 +29,8 @@ public sealed partial class MainWindow
         controls.Children.Add(previous);controls.Children.Add(position);controls.Children.Add(next);
         var zoom=new ComboBox{ItemsSource=new[]{"适应窗口","25%","50%","100%","200%"},SelectedIndex=0,MinWidth=120};Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(zoom,"图片缩放");controls.Children.Add(zoom);
         var encoding=new ComboBox{ItemsSource=new[]{"自动","UTF-8","GB18030","UTF-16 LE"},SelectedIndex=0,MinWidth=120};Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(encoding,"文本编码");controls.Children.Add(encoding);
-        var wrap=new ToggleSwitch{Header="自动换行",IsOn=true};controls.Children.Add(wrap);panel.Children.Add(controls);
+        var wrapLabel=Text("自动换行",12);wrapLabel.VerticalAlignment=VerticalAlignment.Center;controls.Children.Add(wrapLabel);
+        var wrap=new ToggleSwitch{IsOn=true,VerticalAlignment=VerticalAlignment.Center,OnContent="开",OffContent="关"};controls.Children.Add(wrap);panel.Children.Add(controls);
         var find=new TextBox{PlaceholderText="查找文本内容",Header="内容查找"};var matches=Text("",12);panel.Children.Add(find);panel.Children.Add(matches);
         var host=new Grid{Height=Math.Clamp(AppWindow.ClientSize.Height/Root.XamlRoot.RasterizationScale-310,180,430),Background=(Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],CornerRadius=new CornerRadius(6)};panel.Children.Add(host);
         var metadata=Text("",12);panel.Children.Add(metadata);

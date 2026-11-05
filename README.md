@@ -1,6 +1,8 @@
 # New7z
 
-Windows 11 Fluent Design 风格的本地压缩工具，基于 WinUI 3 和 7-Zip 引擎。作者：**王国梁**。当前预览版：**0.1.11**，Windows 11 x64。
+[![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
+
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。作者：**王国梁**。当前预览版：**0.1.11**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
@@ -32,6 +34,30 @@ Windows 11 Fluent Design 风格的本地压缩工具，基于 WinUI 3 和 7-Zip 
 ![设置](docs/app-screenshots/05-设置.png)
 
 更多截图见 [docs/app-screenshots](docs/app-screenshots)。
+
+## 常见问题
+
+**Windows 11 自带的压缩功能不支持 7z 或 RAR，怎么办？**
+安装 New7z 后，右键文件或文件夹 →「显示更多选项 → New7z」即可压缩或解压；也可以在设置里把 7z、ZIP、RAR 等格式的默认应用设为 New7z。
+
+**电脑没有安装 7-Zip，可以打开 .7z、.rar 文件吗？**
+可以。安装包内含完整的 7-Zip 引擎和运行库，离线运行，不需要另装 7-Zip，也不需要 .NET 运行库。
+
+**RAR 文件可以压缩吗？**
+RAR 只支持读取和解压，不能创建；压缩请选择 7z 或 ZIP。
+
+**需要管理员权限或联网吗？**
+不需要。默认安装到当前用户目录，安装和使用都不需要联网。
+
+**和 Windows 自带的「压缩到」有什么区别？**
+Windows 11 自带的压缩只支持 ZIP；New7z 支持 7z/ZIP 压缩，能读取更多格式，并提供压缩包预览、资源管理器右键菜单和文件关联。
+
+**如何卸载？**
+在 Windows「已安装的应用」中找到 New7z 卸载；卸载会恢复 New7z 修改过的系统「压缩到」菜单设置。
+
+## English
+
+New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zip engine. It creates 7z and ZIP archives, extracts 7z, ZIP, RAR, TAR, GZ, XZ, BZ2 and ISO, previews images and text inside archives, and integrates with the Explorer context menu and Windows default apps. It runs offline and does not require a separate 7-Zip or .NET runtime installation.
 
 ## 构建
 

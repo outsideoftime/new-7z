@@ -2,11 +2,11 @@
 
 Windows 11 Fluent Design 风格的本地压缩工具，基于 WinUI 3 和 7-Zip 引擎。作者：**王国梁**。当前预览版：**0.1.11**，Windows 11 x64。
 
-[下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
+[下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
 ## 使用
 
-下载安装 EXE，按向导安装到当前用户目录。安装包约 **23.8 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。
+下载安装 EXE，按向导安装到当前用户目录。安装包约 **22.7 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。详细操作见 [操作说明](docs/操作说明.md)。
 
 - 创建 7z、ZIP，支持密码与 7z 文件名加密；读取、解压和校验引擎支持的归档。
 - 压缩包内直接预览图片和纯文本，支持中文文件名、文件夹、多选解压。

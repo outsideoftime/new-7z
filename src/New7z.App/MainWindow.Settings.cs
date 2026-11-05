@@ -75,7 +75,42 @@ public sealed partial class MainWindow
             popupFeedback.IsOpen=true;
         };
         UpdateDirty();panel.Children.Add(Card(section));panel.Children.Add(Card(popup));
-        var system=Stack(6);system.Children.Add(Text("Windows 自带压缩菜单",18,true));system.Children.Add(Text("保持系统原样，New7z 不隐藏或关闭 Windows 自带的压缩菜单。",12));panel.Children.Add(Card(system));
+        var system=Stack(14);system.Children.Add(Text("Windows 自带压缩菜单",18,true));
+        var systemStore=new WindowsCompressMenuSettingsStore();
+        var hideSystemMenu=new ToggleSwitch{Header="隐藏 Windows「压缩到」菜单",IsOn=saved.HideWindowsCompressMenu,OnContent="隐藏",OffContent="显示"};system.Children.Add(hideSystemMenu);
+        var systemMenuSupported=OperatingSystem.IsWindowsVersionAtLeast(10,0,26100);
+        hideSystemMenu.IsEnabled=systemMenuSupported;
+        system.Children.Add(Text(systemMenuSupported
+            ?"适用于 Windows 11 24H2 及更新版本，仅影响当前用户。保存后会通知资源管理器刷新；如菜单仍显示，请重新启动资源管理器。"
+            :"此选项需要 Windows 11 24H2 或更新版本。",12));
+        var systemFeedback=new InfoBar{IsOpen=false,IsClosable=false};system.Children.Add(systemFeedback);
+        bool changingSystemMenu=false,restoringSystemMenu=false;
+        hideSystemMenu.Toggled+=(_,_)=>
+        {
+            if(restoringSystemMenu||changingSystemMenu)return;
+            changingSystemMenu=true;hideSystemMenu.IsEnabled=false;systemFeedback.IsOpen=false;
+            try
+            {
+                var restored=systemStore.SetHidden(hideSystemMenu.IsOn);saved=saved with{HideWindowsCompressMenu=hideSystemMenu.IsOn};
+                if(restored)
+                {
+                    systemFeedback.Severity=InfoBarSeverity.Success;systemFeedback.Title=hideSystemMenu.IsOn?"Windows 压缩菜单已隐藏":"New7z 已恢复修改前的 Windows 菜单设置";
+                    systemFeedback.Message="已通知资源管理器刷新。重新打开右键菜单；如仍未更新，请重新启动资源管理器。";
+                }
+                else
+                {
+                    systemFeedback.Severity=InfoBarSeverity.Warning;systemFeedback.Title="已保留其他程序的设置";
+                    systemFeedback.Message="检测到 Windows 菜单设置已被其他程序修改，New7z 保留了该值；菜单最终显示状态可能受其他设置影响。";
+                }
+            }
+            catch(Exception ex)
+            {
+                restoringSystemMenu=true;hideSystemMenu.IsOn=saved.HideWindowsCompressMenu;restoringSystemMenu=false;
+                systemFeedback.Severity=InfoBarSeverity.Error;systemFeedback.Title="未能更新 Windows 压缩菜单设置";systemFeedback.Message=ex.Message;
+            }
+            finally{changingSystemMenu=false;hideSystemMenu.IsEnabled=true;systemFeedback.IsOpen=true;}
+        };
+        panel.Children.Add(Card(system));
         AddAssociationSettings(panel);
     }
 }

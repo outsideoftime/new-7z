@@ -38,6 +38,7 @@
 | Shell Task | ShellTaskWindow / ArchiveEngine | 本文件 | 独立快捷任务窗口；原生输入/下拉/密码/进度/结果 | test-shell.ps1 / 原生窗口检查 |
 | Windows Icon | WindowAppearance / build-icons.ps1 | DESIGN.md | 主程序/小窗口/EXE/Explorer 菜单 | test-icons.ps1 |
 | Explorer Settings | MainWindow.Settings / ExplorerPreferencesStore | 本文件 | ToggleSwitch 总开关/CheckBox 命令/ComboBox 关闭方式 | test-shell-preferences.ps1 / test-popup-close.ps1 / Core integration |
+| Windows Compression Menu Setting | MainWindow.Settings / WindowsCompressMenuSettingsStore | 本文件 | 当前用户、Windows 11 24H2+「压缩到」菜单开关；保存前备份、恢复原注册表值 | test.ps1 隔离注册表键 15 项 + 安装脚本恢复 7 项；真实 Explorer 菜单待验收 |
 | Windows Integration | MainWindow.Integration / installer/Integrate-Shell.ps1 | docs/安装包发布.md | 注册修复按钮；Windows 默认应用选择器由系统拥有 | test-installer.ps1 / published UI diagnostic |
 
 Date 不适用：只读示例日期，无日期输入控件。引擎 API、登录、远程请求、真实磁盘修改本轮不适用。
@@ -81,9 +82,9 @@ Date 不适用：只读示例日期，无日期输入控件。引擎 API、登�
 
 ## Async and resilience
 
-原生 Explorer 任务变体：启动分流在任何主窗口创建之前完成。设置→执行→完成/失败/取消由同一无系统标题栏小窗口承载，默认手动关闭，提供打开文件夹与关闭；Escape 与底部关闭等效。可在设置中选择成功后自动关闭，任务完成时读取当前策略；失败、取消、设置读取异常时保留结果。执行中要求确认取消，等待回调停止后才允许退出；错误保留原因，重试快捷打包重新选择唯一输出名，配置任务返回原输入表单。批量解压按包串行，分配输出名时预留目录名避免同批重名，密码分别询问且不缓存到其他包。小窗口使用原生 ComboBox、PasswordBox、ContentDialog、InfoBar，与主程序保持主题与冲突默认值一致。
+原生 Explorer 任务变体：启动分流在任何主窗口创建之前完成。设置→执行→完成/失败/取消由同一无系统标题栏小窗口承载，默认手动关闭，提供打开文件夹与关闭；Escape 与底部关闭等效。配置窗口按表单内容调整高度，底部操作栏保持固定；内容超出工作区时内部滚动。可在设置中选择成功后自动关闭，任务完成时读取当前策略；失败、取消、设置读取异常时保留结果。执行中要求确认取消，等待回调停止后才允许退出；错误保留原因，重试快捷打包重新选择唯一输出名，配置任务返回原输入表单。批量解压按包串行，分配输出名时预留目录名避免同批重名，密码分别询问且不缓存到其他包。小窗口使用原生 ComboBox、PasswordBox、ContentDialog、InfoBar，与主程序保持主题与冲突默认值一致。
 
-设置中的菜单总开关与命令勾选为表单草稿，通过「应用菜单设置」一起保存，菜单开启时至少勾选一项。总开关关闭时保留命令选择，重新开启可沿用；没有当前文件类型适用命令时隐藏空的 New7z 根菜单。原生 DLL 每次读取配置，不需重载 DLL；部分 Explorer 窗口缓存仍可能需要重新打开。当前用户设置保存在 `HKCU\Software\New7z\Explorer`，不操作 Windows 自带压缩菜单的系统注册项。弹窗关闭方式选择即保存，保存失败回退并说明原因。默认菜单开启、全部命令、手动关闭。
+设置中的菜单总开关与命令勾选为表单草稿，通过「应用菜单设置」一起保存，菜单开启时至少勾选一项。总开关关闭时保留命令选择，重新开启可沿用；没有当前文件类型适用命令时隐藏空的 New7z 根菜单。原生 DLL 每次读取配置，不需重载 DLL；部分 Explorer 窗口缓存仍可能需要重新打开。当前用户设置保存在 `HKCU\Software\New7z\Explorer`。弹窗关闭方式与 Windows 11 24H2+「压缩到」菜单开关选择即保存，失败回退并说明原因。隐藏系统菜单时只屏蔽当前用户的 Windows 压缩命令 CLSID，备份并恢复其原有注册表值；重启 Explorer 后仍会生效。默认菜单开启、全部命令、手动关闭，不隐藏 Windows 菜单。
 
 本轮 addTask 每次触发创建一个内存任务，模拟 0–100% 明确标识。切换页面不清定时器，重复提交通过关闭弹窗与提交锁限制。暂停只暂停模拟计时；不表达真实引擎能力。错误示例可重试，取消需确认。实际引擎准备/运行/输入/结束协议见功能设计；无服务器、网络请求、会话过期或远程写入。
 

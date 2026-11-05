@@ -1,8 +1,8 @@
 <Window x:Class="New7z.App.ShellTaskWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
  <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" KeyDown="Root_KeyDown">
   <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-   <StackPanel Spacing="20" Padding="28,24,28,20">
+  <ScrollViewer x:Name="TaskScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+   <StackPanel x:Name="TaskBody" Spacing="20" Padding="28,24,28,20">
     <Grid ColumnSpacing="14" Background="Transparent" PointerPressed="DragHeader_PointerPressed"><Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <Image x:Name="BrandImage" Width="44" Height="44" VerticalAlignment="Top"/>
      <StackPanel Grid.Column="1" Spacing="4"><TextBlock x:Name="Heading" Text="准备任务" FontSize="22" FontWeight="SemiBold"/><TextBlock x:Name="SourceText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxHeight="56" TextTrimming="CharacterEllipsis"/></StackPanel>
@@ -16,7 +16,7 @@
     <InfoBar x:Name="Message" IsClosable="False" IsOpen="False"/>
    </StackPanel>
   </ScrollViewer>
-  <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" Background="{ThemeResource LayerFillColorDefaultBrush}" Padding="28,16">
+  <Border x:Name="ActionFooter" Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" Background="{ThemeResource LayerFillColorDefaultBrush}" Padding="28,16">
    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
     <Button x:Name="RetryButton" Content="重试" Visibility="Collapsed" Click="Retry_Click" MinWidth="88"/>
     <Button x:Name="FolderButton" Content="打开文件夹" Visibility="Collapsed" Click="Folder_Click" MinWidth="108"/>

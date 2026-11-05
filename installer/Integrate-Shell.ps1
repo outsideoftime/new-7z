@@ -10,6 +10,8 @@ $ErrorActionPreference='Stop'
 $InstallRoot=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
 $statePath=Join-Path $InstallRoot 'installation.json'
 $classId='{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}'
+$compressToClsid='{7AE6900F-6EB0-44A2-9CA1-DB2F7EF352AF}'
+$blockedPath='Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked'
 $classes=[Microsoft.Win32.Registry]::CurrentUser
 function Owned-Path([string]$Path){return $Path -and $Path.StartsWith($InstallRoot+'\',[StringComparison]::OrdinalIgnoreCase)}
 function Remove-Classic {
@@ -39,6 +41,51 @@ function Register-Classic {
 function Notify-Explorer {
  if(!('New7z.ShellNotify' -as [type])){Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace New7z { public static class ShellNotify { [DllImport("shell32.dll")] public static extern void SHChangeNotify(uint e,uint f,IntPtr a,IntPtr b); } }'}
  [New7z.ShellNotify]::SHChangeNotify(0x08000000,0x1000,[IntPtr]::Zero,[IntPtr]::Zero)
+}
+# Mirrors ExplorerPreferences.cs: remove only the block entry New7z itself wrote.
+function Restore-WindowsCompressMenu {
+ $preferences=$classes.OpenSubKey('Software\New7z\Explorer',$true)
+ if(!$preferences){return}
+ $restored=$false
+ try{
+  $backup=$preferences.OpenSubKey('WindowsCompressMenuBackup')
+  if($backup){
+   try{
+    $marker=$backup.GetValue('Marker')
+    $blocked=$classes.OpenSubKey($blockedPath,$true)
+    if($blocked){
+     try{
+      $current=$blocked.GetValue($compressToClsid,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      if($current -is [string] -and $current -ceq $marker){
+       if($backup.GetValue('HadPreviousValue') -eq 1){
+        $kind=[Microsoft.Win32.RegistryValueKind]$backup.GetValue('PreviousKind',[int][Microsoft.Win32.RegistryValueKind]::String)
+        $previous=$backup.GetValue('PreviousValue',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if($null -ne $previous){$blocked.SetValue($compressToClsid,$previous,$kind)}
+       }else{$blocked.DeleteValue($compressToClsid,$false)}
+       $restored=$true
+      }
+     }finally{$blocked.Dispose()}
+    }
+   }finally{$backup.Dispose()}
+   $preferences.DeleteSubKeyTree('WindowsCompressMenuBackup',$false)
+  }elseif($preferences.GetValue('HideWindowsCompressMenu') -eq 1){
+   # The backup was lost; remove an orphaned entry only when New7z wrote it.
+   $blocked=$classes.OpenSubKey($blockedPath,$true)
+   if($blocked){
+    try{
+     $current=$blocked.GetValue($compressToClsid,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+     if($current -is [string] -and $current.StartsWith('New7z:',[StringComparison]::Ordinal)){
+      $blocked.DeleteValue($compressToClsid,$false);$restored=$true
+     }
+    }finally{$blocked.Dispose()}
+   }
+  }
+  # Only rewrite the preference when this uninstall restored the menu or the value exists,
+  # so uninstalling never adds a value to a user's untouched settings.
+  if($restored -or $null -ne $preferences.GetValue('HideWindowsCompressMenu')){
+   $preferences.SetValue('HideWindowsCompressMenu',0,[Microsoft.Win32.RegistryValueKind]::DWord)
+  }
+ }finally{$preferences.Dispose()}
 }
 function Register-Associations {
  $appExe="$RuntimeDirectory\New7z.App.exe"
@@ -99,7 +146,7 @@ function Remove-OpenWith {
 }
 try{
  if($Action -eq 'Remove'){
-  Remove-Modern $true;Remove-Classic;Remove-OpenWith;Remove-Associations;Notify-Explorer;exit 0
+  Remove-Modern $true;Remove-Classic;Remove-OpenWith;Remove-Associations;Restore-WindowsCompressMenu;Notify-Explorer;exit 0
  }
  $RuntimeDirectory=[IO.Path]::GetFullPath($RuntimeDirectory)
  if((!(Owned-Path $RuntimeDirectory) -and $RuntimeDirectory -ne $InstallRoot) -or !(Test-Path -LiteralPath "$RuntimeDirectory/New7z.App.exe")){throw 'Invalid application runtime directory.'}

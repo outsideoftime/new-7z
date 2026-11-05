@@ -60,10 +60,20 @@ public sealed partial class ShellTaskWindow:Window
     }
     private void Resize(bool configure)
     {
+        ResizeToHeight(configure?560:380);
+    }
+    private void ResizeToContent()
+    {
+        Root.UpdateLayout();
+        var contentHeight=TaskBody.DesiredSize.Height+ActionFooter.ActualHeight+2;
+        if(double.IsFinite(contentHeight)&&contentHeight>0)ResizeToHeight(contentHeight);
+    }
+    private void ResizeToHeight(double heightDip)
+    {
         var scale=Root.XamlRoot.RasterizationScale;
         var area=DisplayArea.GetFromWindowId(AppWindow.Id,DisplayAreaFallback.Primary).WorkArea;
         var width=Math.Min((int)(600*scale),area.Width-32);
-        var height=Math.Min((int)((configure?690:380)*scale),area.Height-32);
+        var height=Math.Min((int)Math.Ceiling(heightDip*scale),area.Height-32);
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X+(area.Width-width)/2,area.Y+(area.Height-height)/2,width,height));
     }
     private async void Loaded(object sender,RoutedEventArgs args)
@@ -81,6 +91,7 @@ public sealed partial class ShellTaskWindow:Window
     }
     private void Configure()
     {
+        TaskScrollViewer.VerticalAlignment=VerticalAlignment.Top;
         Configuration.Visibility=Visibility.Visible;ProgressSection.Visibility=Visibility.Collapsed;
         StartButton.Visibility=Visibility.Visible;CancelButton.Content="取消";
         output=new TextBox{Header=request!.Action=="create"?"保存为":"目标目录",Text=request.Action=="create"?ShellPaths.CreateTarget(request,"7z"):System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
@@ -105,7 +116,7 @@ public sealed partial class ShellTaskWindow:Window
             conflict=new ComboBox{Header="遇到同名文件",ItemsSource=new[]{"自动重命名，保留两者","跳过已有文件","替换已有文件"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};Configuration.Children.Add(conflict);
             Configuration.Children.Add(new TextBlock{Text=request.Paths.Length>1?"每个压缩包解压到独立子文件夹，不删除源文件。":"不删除源压缩包。",TextWrapping=TextWrapping.Wrap});
         }
-        output.Focus(FocusState.Programmatic);
+        output.Focus(FocusState.Programmatic);Root.DispatcherQueue.TryEnqueue(ResizeToContent);
     }
     private async void Browse_Click(object sender,RoutedEventArgs args)
     {
@@ -150,6 +161,7 @@ public sealed partial class ShellTaskWindow:Window
     private async Task RunAsync()
     {
         if(running)return;running=true;cancellation.Dispose();cancellation=new();
+        TaskScrollViewer.VerticalAlignment=VerticalAlignment.Stretch;
         Configuration.Visibility=Visibility.Collapsed;StartButton.Visibility=Visibility.Collapsed;
         RetryButton.Visibility=Visibility.Collapsed;FolderButton.Visibility=Visibility.Collapsed;Message.IsOpen=false;
         ProgressSection.Visibility=Visibility.Visible;Progress.IsIndeterminate=true;Progress.Value=0;PercentText.Text="";
@@ -228,7 +240,14 @@ public sealed partial class ShellTaskWindow:Window
             }
         }
     }
-    private void ShowMessage(string title,string text,InfoBarSeverity severity){Message.Title=title;Message.Message=text;Message.Severity=severity;Message.IsOpen=true;}
+    private void ShowMessage(string title,string text,InfoBarSeverity severity)
+    {
+        Message.Title=title;Message.Message=text;Message.Severity=severity;Message.IsOpen=true;
+        // A message added after the window was sized to its form lands below the visible
+        // area; grow the configure window and make sure the message is on screen.
+        var grow=TaskScrollViewer.VerticalAlignment==VerticalAlignment.Top;
+        Root.DispatcherQueue.TryEnqueue(()=>{if(grow)ResizeToContent();Message.StartBringIntoView();});
+    }
     private void ShowFailure(string error)
     {
         Progress.IsIndeterminate=false;StatusText.Text="未完成";CancelButton.Content="关闭";
@@ -260,7 +279,7 @@ public sealed partial class ShellTaskWindow:Window
         if(request?.Action is "create" or "extract-to")
         {
             Message.IsOpen=false;RetryButton.Visibility=Visibility.Collapsed;FolderButton.Visibility=Visibility.Collapsed;
-            Configuration.Visibility=Visibility.Visible;ProgressSection.Visibility=Visibility.Collapsed;StartButton.Visibility=Visibility.Visible;Resize(true);return;
+            TaskScrollViewer.VerticalAlignment=VerticalAlignment.Top;Configuration.Visibility=Visibility.Visible;ProgressSection.Visibility=Visibility.Collapsed;StartButton.Visibility=Visibility.Visible;Root.DispatcherQueue.TryEnqueue(ResizeToContent);return;
         }
         PrepareTargets();await RunAsync();
     }

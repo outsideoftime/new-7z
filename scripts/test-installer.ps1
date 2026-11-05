@@ -26,6 +26,7 @@ foreach($path in $ownKeys){
 $valueBackups=@()
 $sharedValues=@([pscustomobject]@{Path='Software\RegisteredApplications';Name='New7z'})
 $sharedValues+=@('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso' | ForEach-Object {[pscustomobject]@{Path="Software\Classes\$_\OpenWithProgids";Name='New7z.Archive'}})
+$sharedValues+=@([pscustomobject]@{Path='Software\New7z\Explorer';Name='HideWindowsCompressMenu'},[pscustomobject]@{Path='Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked';Name='{7AE6900F-6EB0-44A2-9CA1-DB2F7EF352AF}'})
 foreach($entry in $sharedValues){
  $key=$registry.OpenSubKey($entry.Path);$had=$key -and $key.GetValueNames().Contains($entry.Name)
  $valueBackups+=,[pscustomobject]@{Path=$entry.Path;Name=$entry.Name;Had=$had;Value=$(if($had){$key.GetValue($entry.Name)});Kind=$(if($had){$key.GetValueKind($entry.Name)})}
@@ -37,12 +38,12 @@ $originalState=if(Test-Path -LiteralPath $installedStatePath){Get-Content $insta
 $shortcut=Join-Path ([Environment]::GetFolderPath('Programs')) 'New7z.lnk'
 $shortcutBackup=Join-Path $fixture 'New7z.lnk.backup'
 if(Test-Path -LiteralPath $shortcut){Copy-Item -LiteralPath $shortcut -Destination $shortcutBackup}
-function Preferences {
+function Preferences([switch]$ExceptCompressMenu) {
  $key=$registry.OpenSubKey('Software\New7z\Explorer')
  if(!$key){return '<absent>'}
- try{return (@($key.GetValueNames() | Sort-Object | ForEach-Object {"$_=$($key.GetValue($_))"}) -join ';')}finally{$key.Dispose()}
+ try{$names=@($key.GetValueNames() | Sort-Object);if($ExceptCompressMenu){$names=@($names | Where-Object {$_ -ne 'HideWindowsCompressMenu'})};return (@($names | ForEach-Object {"$_=$($key.GetValue($_))"}) -join ';')}finally{$key.Dispose()}
 }
-$preferencesBefore=Preferences
+$preferencesBefore=Preferences -ExceptCompressMenu
 $appProcess=$null
 function Check([bool]$Condition,[string]$Name){if(!$Condition){throw "FAIL: $Name"};$checks.Add($Name);Write-Host "PASS $Name"}
 function Run-Setup([string]$Extra,[string]$Log){
@@ -109,13 +110,19 @@ try{
  foreach($path in @('HKCU:/Software/Classes/*/shell/New7z','HKCU:/Software/Classes/Directory/shell/New7z','HKCU:/Software/Classes/New7z.Archive','HKCU:/Software/New7z/Capabilities')){Check (!(Test-Path -LiteralPath $path)) "uninstall removes $path"}
  $key=$registry.OpenSubKey('Software\RegisteredApplications');try{Check (!$key.GetValueNames().Contains('New7z')) 'uninstall removes owned Default Apps entry'}finally{$key.Dispose()}
  Check (!(Test-Path -LiteralPath "$runtime/New7z.App.exe")) 'uninstall removes installed executable'
- Check ((Preferences) -eq $preferencesBefore) 'upgrade and uninstall preserve menu preferences'
+ Check ((Preferences -ExceptCompressMenu) -eq $preferencesBefore) 'upgrade and uninstall preserve menu preferences'
+ $compressPreference=$registry.OpenSubKey('Software\New7z\Explorer')
+ try{$compressValue=if($compressPreference){$compressPreference.GetValue('HideWindowsCompressMenu')}else{$null}}finally{if($compressPreference){$compressPreference.Dispose()}}
+ Check ($null -eq $compressValue -or $compressValue -eq 0) 'uninstall clears the Windows compression menu preference'
 }finally{
  if($appProcess){$appProcess.Refresh();if(!$appProcess.HasExited){Stop-Process -Id $appProcess.Id -ErrorAction SilentlyContinue}}
  try{Uninstall}finally{
   foreach($path in $ownKeys){$registry.DeleteSubKeyTree($path,$false)}
   foreach($backup in $backups){& reg.exe import $backup.File | Out-Null;if($LASTEXITCODE){throw 'Cannot restore original integration.'}}
-  foreach($entry in $valueBackups){$key=$registry.CreateSubKey($entry.Path);try{if($entry.Had){$key.SetValue($entry.Name,$entry.Value,$entry.Kind)}else{$key.DeleteValue($entry.Name,$false)}}finally{$key.Dispose()}}
+  foreach($entry in $valueBackups){
+   if($entry.Had){$key=$registry.CreateSubKey($entry.Path);try{$key.SetValue($entry.Name,$entry.Value,$entry.Kind)}finally{$key.Dispose()}}
+   else{$key=$registry.OpenSubKey($entry.Path,$true);if($key){try{$key.DeleteValue($entry.Name,$false)}finally{$key.Dispose()}}}
+  }
   foreach($package in $oldPackages){
    if((Split-Path $package.InstallLocation -Leaf) -eq 'ShellIdentity'){$external=Split-Path $package.InstallLocation -Parent;$identity=Join-Path $package.InstallLocation 'AppxManifest.xml'}
    elseif($originalState -and $originalState.PackageFullName -eq $package.PackageFullName){$external=$originalState.RuntimeDirectory;$identity=Join-Path $external 'ShellIdentity/AppxManifest.xml'}

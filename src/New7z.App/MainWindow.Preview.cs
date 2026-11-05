@@ -43,8 +43,9 @@ public sealed partial class MainWindow
             {
                 decoded=ArchiveEngine.DecodeText(data,encoding.SelectedItem?.ToString()??"自动");
                 if(decoded.Contains('\0'))throw new InvalidDataException("内容可能为二进制文件，请更换编码或先解压查看。");
-                var numbered=string.Join(Environment.NewLine,decoded.Split('\n').Take(100000).Select((line,i)=>$"{i+1,5}  {line.TrimEnd('\r')}"));
-                var box=new TextBox{Text=numbered,IsReadOnly=true,AcceptsReturn=true,TextWrapping=wrap.IsOn?TextWrapping.Wrap:TextWrapping.NoWrap,FontFamily=new FontFamily("Consolas"),FontSize=13,BorderThickness=new Thickness(0),Background=new SolidColorBrush(Microsoft.UI.Colors.Transparent)};
+                var lines=decoded.Replace("\r\n","\n",StringComparison.Ordinal).Replace('\r','\n').Split('\n');
+                var numbered=string.Join(Environment.NewLine,lines.Take(100000).Select((line,i)=>$"{i+1,5}  {line}"));
+                var box=new TextBox{Text=numbered,Height=host.Height,VerticalAlignment=VerticalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,IsReadOnly=true,AcceptsReturn=true,TextWrapping=wrap.IsOn?TextWrapping.Wrap:TextWrapping.NoWrap,FontFamily=new FontFamily("Consolas"),FontSize=13,BorderThickness=new Thickness(0),Background=new SolidColorBrush(Microsoft.UI.Colors.Transparent)};
                 ScrollViewer.SetHorizontalScrollBarVisibility(box,wrap.IsOn?ScrollBarVisibility.Disabled:ScrollBarVisibility.Auto);ScrollViewer.SetVerticalScrollBarVisibility(box,ScrollBarVisibility.Auto);
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box,"只读文本内容，带行号");host.Children.Clear();host.Children.Add(box);
                 var q=find.Text;

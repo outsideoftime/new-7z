@@ -34,6 +34,11 @@ public sealed partial class MainWindow:Window
     private long openVersion;
     private const string InternalDragFormat="New7z.EntryDrag";
     private string? dragTemp;
+    private Windows.Foundation.Point? dragPressPoint;
+    private ArchiveRow? dragPressRow;
+    private bool dragGestureActive;
+    private IReadOnlyList<IStorageItem>? dragPayload;
+    private string? dragPayloadTitle;
     private readonly List<string> startupFiles=[];
     private nint Hwnd=>WindowNative.GetWindowHandle(this);
     private static SolidColorBrush Secondary=>new(Colors.Gray);
@@ -43,7 +48,7 @@ public sealed partial class MainWindow:Window
         SystemBackdrop=new MicaBackdrop();AppWindow.Resize(new Windows.Graphics.SizeInt32(1320,880));
         AppWindow.Closing+=OnClosing;
         initialized=true;ApplyTheme();ApplyIcon();WindowAppearance.ApplyIcon(this);ShowHome();
-        Root.AllowDrop=true;Root.DragOver+=(_,e)=>{if(e.DataView.Contains(InternalDragFormat)){e.AcceptedOperation=DataPackageOperation.None;return;}if(e.DataView.Contains(StandardDataFormats.StorageItems))e.AcceptedOperation=DataPackageOperation.Copy;};Root.Drop+=FilesDropped;
+        Root.AllowDrop=true;Root.DragOver+=(_,e)=>UpdateDragOver(e);Root.Drop+=FilesDropped;
         foreach(var stale in Directory.EnumerateDirectories(System.IO.Path.GetTempPath(),"New7z-drag-*"))
         {
             try{if(Directory.GetLastWriteTimeUtc(stale)<DateTime.UtcNow.AddDays(-2))Directory.Delete(stale,true);}catch{}
@@ -109,8 +114,9 @@ public sealed partial class MainWindow:Window
     private async Task<string?> PickFolderAsync(){var picker=new FolderPicker();InitializeWithWindow.Initialize(picker,Hwnd);picker.FileTypeFilter.Add("*");return (await picker.PickSingleFolderAsync())?.Path;}
     private async void FilesDropped(object sender,DragEventArgs e)
     {
-        if(e.DataView.Contains(InternalDragFormat))return;
-        if(!e.DataView.Contains(StandardDataFormats.StorageItems))return;var deferral=e.GetDeferral();
+        if(e.Handled)return;
+        if(e.DataView.Contains(InternalDragFormat)){e.Handled=true;return;}
+        if(!e.DataView.Contains(StandardDataFormats.StorageItems))return;e.Handled=true;var deferral=e.GetDeferral();
         try{var items=await e.DataView.GetStorageItemsAsync();var paths=items.Select(i=>i.Path).ToList();if(paths.Count==0)return;if(page=="archive"&&archive!=null){await AddSourcesAsync(paths);return;}if(paths.Count==1&&File.Exists(paths[0])&&new[]{".7z",".zip",".rar",".tar",".gz",".xz",".bz2",".iso"}.Contains(System.IO.Path.GetExtension(paths[0]).ToLowerInvariant()))await OpenArchiveAsync(paths[0]);else if(paths.Count>0)await CreateDialogAsync(paths);}catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}finally{deferral.Complete();}
     }
     private async Task<string?> AskPasswordAsync()
@@ -161,7 +167,7 @@ public sealed partial class MainWindow:Window
         searchBox=new TextBox{PlaceholderText="搜索当前目录",Text=query};Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(searchBox,"搜索当前目录");searchBox.TextChanged+=(_,_)=>{query=searchBox.Text;RefreshRows();};Grid.SetColumn(searchBox,2);pathbar.Children.Add(searchBox);Grid.SetRow(pathbar,2);grid.Children.Add(pathbar);
         var table=new Grid();table.RowDefinitions.Add(new(){Height=GridLength.Auto});table.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
         var header=Text("       名称                                                     大小                 压缩后               修改时间",12);header.Margin=new Thickness(12,10,12,10);header.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];table.Children.Add(header);
-        fileList=new ListView{SelectionMode=ListViewSelectionMode.Multiple,IsMultiSelectCheckBoxEnabled=true,HorizontalContentAlignment=HorizontalAlignment.Stretch,CanDragItems=true,AllowDrop=false};
+        fileList=new ListView{SelectionMode=ListViewSelectionMode.Multiple,IsMultiSelectCheckBoxEnabled=true,HorizontalContentAlignment=HorizontalAlignment.Stretch};
         fileList.ItemTemplate=(DataTemplate)XamlReader.Load("""
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><Grid MinHeight="48" ColumnSpacing="12" Padding="4,5"><Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/><ColumnDefinition Width="100"/><ColumnDefinition Width="145"/></Grid.ColumnDefinitions><FontIcon Glyph="{Binding Glyph}" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding Name}" ToolTipService.ToolTip="{Binding FullPath}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/><TextBlock Grid.Column="2" Text="{Binding SizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="3" Text="{Binding PackedSizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="4" Text="{Binding ModifiedText}" VerticalAlignment="Center" FontSize="12"/></Grid></DataTemplate>
         """);
@@ -170,7 +176,17 @@ public sealed partial class MainWindow:Window
             if(elements.Any(x=>x is CheckBox))return;
             if(elements.OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault() is { } row)await ActivateRowAsync(row.Entry);
         };fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}else if(e.Key==VirtualKey.Delete){e.Handled=true;await DeleteSelectedAsync();}};
-        fileList.DragStarting+=FileListDragStarting;fileList.DropCompleted+=(_,_)=>CleanupDragTemp();
+        // Custom drag gesture: ListView's built-in item drag raises DragStarting on the item
+        // without a usable deferral, so the files must be prepared before StartDragAsync.
+        fileList.AddHandler(UIElement.PointerPressedEvent,new PointerEventHandler(FileListPointerPressed),true);
+        fileList.AddHandler(UIElement.PointerMovedEvent,new PointerEventHandler(FileListPointerMoved),true);
+        fileList.AddHandler(UIElement.PointerReleasedEvent,new PointerEventHandler(FileListPointerCanceled),true);
+        fileList.AddHandler(UIElement.PointerCanceledEvent,new PointerEventHandler(FileListPointerCanceled),true);
+        fileList.AddHandler(UIElement.PointerCaptureLostEvent,new PointerEventHandler(FileListPointerCanceled),true);
+        fileList.DragStarting+=FileListDragStarting;
+        fileList.AllowDrop=true;
+        fileList.AddHandler(UIElement.DragOverEvent,new DragEventHandler((_,e)=>UpdateDragOver(e)),true);
+        fileList.AddHandler(UIElement.DropEvent,new DragEventHandler(FilesDropped),true);
         fileList.SelectionChanged+=(_,_)=>{countLabel!.Text=$"{CurrentRows().Count} 个项目 · 已选择 {fileList.SelectedItems.Count} 项";};Grid.SetRow(fileList,1);table.Children.Add(fileList);Grid.SetRow(table,3);grid.Children.Add(table);
         countLabel=Text("",12);Grid.SetRow(countLabel,4);grid.Children.Add(countLabel);ShowContent(grid);RefreshRows();
     }
@@ -294,10 +310,11 @@ public sealed partial class MainWindow:Window
         },false,ReloadArchiveAsync);
     }
     // Rewriting an archive reads every kept entry, so an encrypted archive needs the password up front.
+    // Returns null only when the user cancelled; an empty string means no password is needed.
     private async Task<string?> EnsurePasswordAsync()
     {
         if(entries.Any(e=>e.Encrypted)&&string.IsNullOrEmpty(password)){var key=await AskPasswordAsync();if(key==null)return null;password=key;}
-        return password;
+        return password??"";
     }
     private async Task ReloadArchiveAsync()
     {
@@ -311,53 +328,83 @@ public sealed partial class MainWindow:Window
         catch(ArchivePasswordException){Notify("压缩包现在需要密码，请重新打开。",InfoBarSeverity.Warning);}
         catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}
     }
-    // DragStarting (unlike DragItemsStarting) supports a deferral, so the entries can be
-    // extracted to a temporary folder before Explorer receives real files to copy.
-    private async void FileListDragStarting(UIElement sender,DragStartingEventArgs e)
+    private static void UpdateDragOver(DragEventArgs e)
     {
-        var deferral=e.GetDeferral();string? temp=null;
+        if(e.DataView.Contains(InternalDragFormat)){e.AcceptedOperation=DataPackageOperation.None;return;}
+        if(e.DataView.Contains(StandardDataFormats.StorageItems))e.AcceptedOperation=DataPackageOperation.Copy;
+    }
+    private void FileListPointerPressed(object sender,PointerRoutedEventArgs e)
+    {
+        dragPressPoint=null;dragPressRow=null;
+        if(fileList==null)return;
+        var currentPoint=e.GetCurrentPoint(fileList);
+        if(!currentPoint.Properties.IsLeftButtonPressed)return;
+        var position=currentPoint.Position;
+        var windowPoint=fileList.TransformToVisual(null).TransformPoint(position);
+        var elements=VisualTreeHelper.FindElementsInHostCoordinates(windowPoint,fileList).ToList();
+        if(elements.Any(x=>x is CheckBox))return;
+        var row=elements.OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault();
+        if(row==null){return;}
+        dragPressRow=row;dragPressPoint=position;
+    }
+    private void FileListPointerCanceled(object sender,PointerRoutedEventArgs e){dragPressPoint=null;dragPressRow=null;}
+    private async void FileListPointerMoved(object sender,PointerRoutedEventArgs e)
+    {
+        if(dragPressPoint is not { } origin||dragGestureActive||fileList==null)return;
+        var point=e.GetCurrentPoint(fileList);
+        if(!point.Properties.IsLeftButtonPressed){dragPressPoint=null;dragPressRow=null;return;}
+        var current=point.Position;
+        if(Math.Abs(current.X-origin.X)<8&&Math.Abs(current.Y-origin.Y)<8)return;
+        var pressed=dragPressRow;dragPressPoint=null;dragPressRow=null;
+        if(pressed==null||archive==null||page!="archive"||previewOpen)return;
+        // Pressing an unselected row drags that row; pressing inside a selection drags the selection.
+        if(!fileList.SelectedItems.OfType<ArchiveRow>().Any(item=>ReferenceEquals(item,pressed)))fileList.SelectedItem=pressed;
+        var rows=fileList.SelectedItems.OfType<ArchiveRow>().Select(r=>r.Entry).ToList();
+        if(rows.Count==0)rows=[pressed.Entry];
+        dragGestureActive=true;string? temp=null;var started=false;
         try
         {
-            if(archive==null||page!="archive"||previewOpen){e.Cancel=true;return;}
-            var rows=fileList?.SelectedItems.OfType<ArchiveRow>().Select(r=>r.Entry).ToList()??[];
-            if(rows.Count==0&&fileList!=null)
-            {
-                // Dragging an unselected row should still drag that row, like Explorer.
-                var element=VisualTreeHelper.FindElementsInHostCoordinates(e.GetPosition(null),fileList).OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault();
-                if(element!=null){fileList.SelectedItem=element;rows=[element.Entry];}
-            }
-            var selected=SelectedEntries();
-            if(rows.Count==0||selected.Count==0){e.Cancel=true;return;}
-            var current=archive;
+            var currentArchive=archive;
             var key=await EnsurePasswordAsync();
-            if(key is null){e.Cancel=true;return;}
+            if(key is null)return;
+            var selected=SelectedEntries();
+            if(selected.Count==0)return;
             StatusText.Text=rows.Count==1?"正在准备拖动 "+rows[0].Name+" …":$"正在准备拖动 {rows.Count} 项 …";
             temp=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"New7z-drag-"+Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temp);
-            await engine.ExtractAsync(current,selected,temp,ConflictPolicy.Rename,key,null,CancellationToken.None);
+            await engine.ExtractAsync(currentArchive,selected,temp,ConflictPolicy.Rename,key,null,CancellationToken.None);
             var storage=new List<IStorageItem>();
-            foreach(var row in rows)
+            foreach(var entry in rows)
             {
-                var full=System.IO.Path.Combine(temp,row.NormalizedPath.Replace('/',System.IO.Path.DirectorySeparatorChar));
+                var full=System.IO.Path.Combine(temp,entry.NormalizedPath.Replace('/',System.IO.Path.DirectorySeparatorChar));
                 if(Directory.Exists(full))storage.Add(await StorageFolder.GetFolderFromPathAsync(full));
                 else if(File.Exists(full))storage.Add(await StorageFile.GetFileFromPathAsync(full));
             }
-            if(storage.Count==0){e.Cancel=true;return;}
+            if(storage.Count==0)return;
             if(dragTemp!=null)ScheduleTempCleanup(dragTemp);
             dragTemp=temp;temp=null;
-            e.AllowedOperations=DataPackageOperation.Copy;
-            e.Data.RequestedOperation=DataPackageOperation.Copy;
-            e.Data.SetData(InternalDragFormat,"1");
-            e.Data.SetStorageItems(storage,false);
-            e.Data.Properties.Title=System.IO.Path.GetFileName(current);
+            dragPayload=storage;dragPayloadTitle=System.IO.Path.GetFileName(currentArchive);
+            started=true;
+            await fileList.StartDragAsync(point);
         }
-        catch(Exception ex){e.Cancel=true;Notify(ex.Message,InfoBarSeverity.Error);}
+        catch(Exception ex){if(!started)Notify(ex.Message,InfoBarSeverity.Error);}
         finally
         {
+            dragGestureActive=false;dragPayload=null;dragPayloadTitle=null;
             if(temp!=null){try{Directory.Delete(temp,true);}catch{}}
             StatusText.Text="就绪";
-            deferral.Complete();
+            if(started)CleanupDragTemp();
         }
+    }
+    private void FileListDragStarting(UIElement sender,DragStartingEventArgs e)
+    {
+        var storage=dragPayload;
+        if(storage==null||storage.Count==0){e.Cancel=true;return;}
+        e.AllowedOperations=DataPackageOperation.Copy;
+        e.Data.RequestedOperation=DataPackageOperation.Copy;
+        e.Data.SetData(InternalDragFormat,"1");
+        e.Data.SetStorageItems(storage,false);
+        if(dragPayloadTitle!=null)e.Data.Properties.Title=dragPayloadTitle;
     }
     private void CleanupDragTemp()
     {

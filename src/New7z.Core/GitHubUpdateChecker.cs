@@ -26,7 +26,56 @@ public static class GitHubUpdateChecker
         version=new Version(0,0);
         return false;
     }
+    public const string ReleasesFeed="https://github.com/outsideoftime/new-7z/releases.atom";
     public static async Task<UpdateInfo?> CheckAsync(Version current,CancellationToken cancellation=default)
+    {
+        try{return await CheckApiAsync(current,cancellation);}
+        catch(Exception ex) when(ex is HttpRequestException or IOException)
+        {
+            // The unauthenticated REST API is limited to 60 requests per hour per IP; the
+            // public releases feed is not, so use it when the API is unavailable.
+            try{return await CheckFeedAsync(current,cancellation);}
+            catch(Exception fallback) when(fallback is HttpRequestException or IOException or System.Xml.XmlException)
+            {
+                throw new IOException("无法读取 GitHub 发布信息，请检查网络后重试。",ex);
+            }
+        }
+    }
+    public static async Task<UpdateInfo?> CheckFeedAsync(Version current,CancellationToken cancellation=default)
+    {
+        using var request=new HttpRequestMessage(HttpMethod.Get,ReleasesFeed);
+        request.Headers.Accept.ParseAdd("application/atom+xml");
+        using var response=await Client.SendAsync(request,cancellation);
+        response.EnsureSuccessStatusCode();
+        var text=await response.Content.ReadAsStringAsync(cancellation);
+        var document=System.Xml.Linq.XDocument.Parse(text);
+        System.Xml.Linq.XNamespace atom="http://www.w3.org/2005/Atom";
+        foreach(var entry in document.Root!.Elements(atom+"entry"))
+        {
+            var link=entry.Elements(atom+"link").Select(l=>l.Attribute("href")?.Value??"").FirstOrDefault(h=>h.Contains("/releases/tag/",StringComparison.OrdinalIgnoreCase));
+            if(link==null)continue;
+            var tag=link[(link.LastIndexOf("/releases/tag/",StringComparison.OrdinalIgnoreCase)+14)..].Trim('/');
+            if(!TryParseTag(tag,out var version))continue;
+            if(Normalize(version)<=Normalize(current))return null;
+            var notes=HtmlToText(entry.Element(atom+"content")?.Value??"");
+            var installerName=$"New7z-{version}-x64-Setup.exe";
+            var baseUrl=$"https://github.com/outsideoftime/new-7z/releases/download/{tag}/";
+            return new(version,notes,baseUrl+installerName,installerName,baseUrl+"SHA256SUMS.txt");
+        }
+        return null;
+    }
+    private static string HtmlToText(string html)
+    {
+        if(string.IsNullOrWhiteSpace(html))return "";
+        var text=System.Text.RegularExpressions.Regex.Replace(html,@"<br\s*/?>","\u000A",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text=System.Text.RegularExpressions.Regex.Replace(text,@"</(p|div|li|h[1-6])>","\u000A",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text=System.Text.RegularExpressions.Regex.Replace(text,"<[^>]+>","");
+        text=System.Net.WebUtility.HtmlDecode(text);
+        text=System.Text.RegularExpressions.Regex.Replace(text,"[ \u0009]+"," ");
+        text=System.Text.RegularExpressions.Regex.Replace(text,"\u000A{3,}","\u000A\u000A");
+        return text.Trim();
+    }
+    private static async Task<UpdateInfo?> CheckApiAsync(Version current,CancellationToken cancellation)
     {
         using var response=await Client.GetAsync(LatestReleaseApi,cancellation);
         if(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests)throw new IOException("GitHub 更新接口暂时受限，请稍后再检查更新。");

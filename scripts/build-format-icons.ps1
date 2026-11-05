@@ -154,7 +154,8 @@ $boxes=[FormatIconExtractor]::FindIcons($collection)
 if($boxes.Count -lt 10){throw "Format icon sheet has $($boxes.Count) tiles; expected at least 10."}
 $largest=$boxes[0]
 $grid=@($boxes[1..9] | Sort-Object { [int]($_[1]/200) }, { $_[0] })
-$names=@('7z','rar','tar','gz','bz2','xz','iso','zst','xar')
+# Tiles map to the 3x3 grid in row-major order (left to right, top to bottom).
+$names=@('7z','xz','tar','gz','bz2','rar','iso','zst','xar')
 $map=@{ zip=$largest }
 for($i=0;$i -lt $names.Count;$i++){$map[$names[$i]]=$grid[$i]}
 $supported=@('7z','zip','rar','tar','gz','bz2','xz','iso')

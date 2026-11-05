@@ -51,6 +51,12 @@ public sealed partial class MainWindow:Window
             var arg=startupArchive??launchArgs.FirstOrDefault(File.Exists);if(arg!=null)await OpenArchiveAsync(arg);
         };
     }
+    private static Image? FormatIcon(string path)
+    {
+        var name=System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        var file=System.IO.Path.Combine(AppContext.BaseDirectory,"Assets","Formats",name+".png");
+        return File.Exists(file)?new Image{Width=32,Height=32,Source=new BitmapImage(new Uri(file))}:null;
+    }
     private static TextBlock Text(string text,int size=14,bool bold=false)=>new(){Text=text,FontSize=size,FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,TextWrapping=TextWrapping.Wrap};
     private static StackPanel Stack(int space=16)=>new(){Spacing=space};
     private static Button Button(string label,RoutedEventHandler action,bool primary=false)
@@ -80,7 +86,7 @@ public sealed partial class MainWindow:Window
         var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};actions.Children.Add(Button("打开压缩包",async(_,_)=>{var f=await PickArchiveAsync();if(f!=null)await OpenArchiveAsync(f);}));actions.Children.Add(Button("新建压缩",async(_,_)=>await CreateDialogAsync(),true));content.Children.Add(actions);
         var drop=Stack(10);drop.Children.Add(Text("把文件或文件夹拖到窗口",22,true));drop.Children.Add(Text("压缩包可查看内容，普通文件可打包为 7z 或 ZIP。无需另装 7-Zip。"));var pick=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};pick.Children.Add(Button("选择文件",async(_,_)=>{var paths=await PickFilesAsync();if(paths.Count>0)await CreateDialogAsync(paths);}));pick.Children.Add(Button("选择文件夹",async(_,_)=>{var path=await PickFolderAsync();if(path!=null)await CreateDialogAsync([path]);}));drop.Children.Add(pick);content.Children.Add(Card(drop));
         var recent=Stack(8);recent.Children.Add(Text("最近使用",18,true));
-        foreach(var path in settings.Recent.Take(12)){var row=new Grid();row.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});var name=Text(System.IO.Path.GetFileName(path),14,true);var labels=Stack(3);labels.Children.Add(name);var location=Text(path,12);location.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];labels.Children.Add(location);row.Children.Add(labels);var open=Button("打开",async(_,_)=>await OpenArchiveAsync(path));Grid.SetColumn(open,1);row.Children.Add(open);recent.Children.Add(Card(row));}
+        foreach(var path in settings.Recent.Take(12)){var row=new Grid{ColumnSpacing=12};row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});var icon=FormatIcon(path);if(icon!=null){icon.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(icon);}var name=Text(System.IO.Path.GetFileName(path),14,true);var labels=Stack(3);labels.Children.Add(name);var location=Text(path,12);location.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];labels.Children.Add(location);Grid.SetColumn(labels,1);row.Children.Add(labels);var open=Button("打开",async(_,_)=>await OpenArchiveAsync(path));Grid.SetColumn(open,2);row.Children.Add(open);recent.Children.Add(Card(row));}
         if(settings.Recent.Count==0)recent.Children.Add(Text("还没有最近记录。打开一份压缩包开始。"));
         else recent.Children.Add(Button("清空最近记录",async(_,_)=>{var d=Dialog("清空最近记录？",Text("仅移除应用内记录，不删除文件。"),"清空记录");if(await d.ShowAsync()==ContentDialogResult.Primary){settings.Recent.Clear();settings.Save();ShowHome();}}));
         content.Children.Add(recent);ShowContent(new ScrollViewer{Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});

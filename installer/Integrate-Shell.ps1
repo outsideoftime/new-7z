@@ -87,41 +87,56 @@ function Restore-WindowsCompressMenu {
   }
  }finally{$preferences.Dispose()}
 }
+$formats=@('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')
+function Format-ProgId([string]$extension){return 'New7z.'+$extension.Substring(1)}
+function Test-OwnedProgId([string]$progId){
+ $command=$classes.OpenSubKey("Software\Classes\$progId\shell\open\command")
+ if(!$command){return $false}
+ try{return ([string]$command.GetValue('')).StartsWith('"'+$InstallRoot+'\',[StringComparison]::OrdinalIgnoreCase)}finally{$command.Dispose()}
+}
 function Register-Associations {
  $appExe="$RuntimeDirectory\New7z.App.exe"
  $application=$classes.CreateSubKey('Software\Classes\Applications\New7z.App.exe')
  try{
   $application.SetValue('FriendlyAppName','New7z')
   $command=$application.CreateSubKey('shell\open\command');try{$command.SetValue('','"'+$appExe+'" "%1"')}finally{$command.Dispose()}
-  $types=$application.CreateSubKey('SupportedTypes');try{foreach($extension in @('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')){$types.SetValue($extension,'')}}finally{$types.Dispose()}
+  $types=$application.CreateSubKey('SupportedTypes');try{foreach($extension in $formats){$types.SetValue($extension,'')}}finally{$types.Dispose()}
  }finally{$application.Dispose()}
- $prog=$classes.CreateSubKey('Software\Classes\New7z.Archive')
- try{
-  $prog.SetValue('','New7z 压缩包')
-  $icon=$prog.CreateSubKey('DefaultIcon');try{$icon.SetValue('',"$appExe,0")}finally{$icon.Dispose()}
-  $command=$prog.CreateSubKey('shell\open\command');try{$command.SetValue('','"'+$appExe+'" "%1"')}finally{$command.Dispose()}
- }finally{$prog.Dispose()}
  $cap=$classes.CreateSubKey('Software\New7z\Capabilities')
  try{
   $cap.SetValue('ApplicationName','New7z');$cap.SetValue('ApplicationDescription','New7z 压缩、解压和归档预览');$cap.SetValue('ApplicationIcon',"$appExe,0")
   $associations=$cap.CreateSubKey('FileAssociations')
-  try{foreach($extension in @('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')){
-   $associations.SetValue($extension,'New7z.Archive')
+  try{foreach($extension in $formats){
+   $progId=Format-ProgId $extension
+   $prog=$classes.CreateSubKey("Software\Classes\$progId")
+   try{
+    $prog.SetValue('','New7z '+$extension.Substring(1).ToUpperInvariant()+' 压缩包')
+    $icon=$prog.CreateSubKey('DefaultIcon');try{$icon.SetValue('',"$RuntimeDirectory\Assets\Formats\"+$extension.Substring(1)+'.ico')}finally{$icon.Dispose()}
+    $command=$prog.CreateSubKey('shell\open\command');try{$command.SetValue('','"'+$appExe+'" "%1"')}finally{$command.Dispose()}
+   }finally{$prog.Dispose()}
+   $associations.SetValue($extension,$progId)
    $openWith=$classes.CreateSubKey("Software\Classes\$extension\OpenWithProgids")
-   try{$openWith.SetValue('New7z.Archive',[byte[]]@(),[Microsoft.Win32.RegistryValueKind]::None)}finally{$openWith.Dispose()}
+   try{
+    $openWith.DeleteValue('New7z.Archive',$false)
+    $openWith.SetValue($progId,[byte[]]@(),[Microsoft.Win32.RegistryValueKind]::None)
+   }finally{$openWith.Dispose()}
   }}finally{$associations.Dispose()}
  }finally{$cap.Dispose()}
  $registered=$classes.CreateSubKey('Software\RegisteredApplications')
  try{$registered.SetValue('New7z','Software\New7z\Capabilities')}finally{$registered.Dispose()}
 }
 function Remove-Associations {
- $command=$classes.OpenSubKey('Software\Classes\New7z.Archive\shell\open\command');$owned=$false
- if($command){try{$owned=([string]$command.GetValue('')).StartsWith('"'+$InstallRoot+'\',[StringComparison]::OrdinalIgnoreCase)}finally{$command.Dispose()}}
- if(!$owned){return}
- $classes.DeleteSubKeyTree('Software\Classes\New7z.Archive',$false)
- foreach($extension in @('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')){
+ $owned=@()
+ foreach($extension in $formats){
+  $progId=Format-ProgId $extension
+  if(Test-OwnedProgId $progId){$owned+=$progId;$classes.DeleteSubKeyTree("Software\Classes\$progId",$false)}
+ }
+ # Versions before 0.1.8 used one ProgID for every archive type.
+ if(Test-OwnedProgId 'New7z.Archive'){$owned+='New7z.Archive';$classes.DeleteSubKeyTree('Software\Classes\New7z.Archive',$false)}
+ if($owned.Count -eq 0){return}
+ foreach($extension in $formats){
   $openWith=$classes.OpenSubKey("Software\Classes\$extension\OpenWithProgids",$true)
-  if($openWith){try{$openWith.DeleteValue('New7z.Archive',$false)}finally{$openWith.Dispose()}}
+  if($openWith){try{$openWith.DeleteValue((Format-ProgId $extension),$false);$openWith.DeleteValue('New7z.Archive',$false)}finally{$openWith.Dispose()}}
  }
  $registered=$classes.OpenSubKey('Software\RegisteredApplications',$true)
  if($registered){try{if($registered.GetValue('New7z') -eq 'Software\New7z\Capabilities'){$registered.DeleteValue('New7z',$false)}}finally{$registered.Dispose()}}
@@ -180,7 +195,7 @@ try{
  if($EnableAssociations -eq '1'){Register-Associations}else{Remove-Associations;Remove-OpenWith}
  Notify-Explorer
  if($mode -eq 'modern+classic'){$packageFullName=(Get-AppxPackage -Name New7z.ContextMenu | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1).PackageFullName}
- $state=[ordered]@{Version='0.1.7';RuntimeDirectory=$RuntimeDirectory;MenuMode=$mode;AssociationsRegistered=($EnableAssociations -eq '1');PackageFullName=$packageFullName;ModernMenuDetail=$modernError;InstalledAt=[DateTimeOffset]::Now.ToString('o')}
+ $state=[ordered]@{Version='0.1.8';RuntimeDirectory=$RuntimeDirectory;MenuMode=$mode;AssociationsRegistered=($EnableAssociations -eq '1');PackageFullName=$packageFullName;ModernMenuDetail=$modernError;InstalledAt=[DateTimeOffset]::Now.ToString('o')}
  [IO.File]::WriteAllText($statePath,($state | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($true))
  exit 0
 }catch{

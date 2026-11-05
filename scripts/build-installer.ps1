@@ -58,7 +58,7 @@ try{
   }
   Set-Content -LiteralPath "$identity/signed-package.marker" -Value 'Explicit certificate signing enabled.'
  }elseif(Test-Path -LiteralPath "$identity/signed-package.marker"){Remove-Item -LiteralPath "$identity/signed-package.marker"}
- foreach($required in @('New7z.App.exe','New7z.App.pri','resources.pri','MainWindow.xbf','ShellTaskWindow.xbf','7z.dll','New7z.Native.dll','New7z.Shell.dll','New7z.ShellHost.exe','Assets/New7z.ico','Licenses/LGPL.txt','Licenses/Source/7z2605-src.7z')){if(!(Test-Path -LiteralPath (Join-Path $payload $required))){throw "Release payload missing: $required"}}
+ foreach($required in @('New7z.App.exe','New7z.App.pri','resources.pri','MainWindow.xbf','ShellTaskWindow.xbf','7z.dll','New7z.Native.dll','New7z.Shell.dll','New7z.ShellHost.exe','Assets/New7z.ico','Assets/Formats/7z.ico','Assets/Formats/zip.ico','Licenses/LGPL.txt','Licenses/Source/7z2605-src.7z')){if(!(Test-Path -LiteralPath (Join-Path $payload $required))){throw "Release payload missing: $required"}}
  $hashes=@(Get-ChildItem -LiteralPath $payload -File -Recurse | Where-Object Extension -ne '.pdb' | Sort-Object FullName | ForEach-Object {[pscustomobject]@{File=[IO.Path]::GetRelativePath($payload,$_.FullName);SHA256=(Get-FileHash -LiteralPath $_.FullName).Hash;Size=$_.Length}})
  $payloadBytes=[Text.Encoding]::UTF8.GetBytes(($hashes | ConvertTo-Json -Depth 4 -Compress))
  $buildId=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($payloadBytes)).Substring(0,12).ToLowerInvariant()

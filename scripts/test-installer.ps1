@@ -17,6 +17,7 @@ $SetupPath=Join-Path $fixture 'New7z-IntegrationTest.exe'
 $checks=[Collections.Generic.List[string]]::new()
 $registry=[Microsoft.Win32.Registry]::CurrentUser
 $ownKeys=@('Software\Classes\Applications\New7z.App.exe','Software\Classes\CLSID\{642CF40A-831E-42A9-AC63-F5A0ABDD5C17}','Software\Classes\CLSID\{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}','Software\Classes\*\shell\New7z','Software\Classes\Directory\shell\New7z','Software\Classes\New7z.Archive','Software\New7z\Capabilities')
+$ownKeys+=@('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso' | ForEach-Object {"Software\Classes\New7z$_"})
 $backups=@()
 foreach($path in $ownKeys){
  $key=$registry.OpenSubKey($path)
@@ -72,11 +73,12 @@ try{
  & "$projectRoot/artifacts/native/x64/ShellPreferences.Tests.exe" --registered $server
  Check ($LASTEXITCODE -eq 0) 'installed COM activation and icon resource'
  Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/RegisteredApplications' -Name New7z) -eq 'Software\New7z\Capabilities') 'Windows Default Apps registration'
- Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/Classes/New7z.Archive/shell/open/command' -Name '(default)') -eq ('"'+$runtime+'\New7z.App.exe" "%1"')) 'archive open command quotes Unicode and space paths'
+ Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/Classes/New7z.7z/shell/open/command' -Name '(default)') -eq ('"'+$runtime+'\New7z.App.exe" "%1"')) 'archive open command quotes Unicode and space paths'
  foreach($extension in @('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')){
-  Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/New7z/Capabilities/FileAssociations' -Name $extension) -eq 'New7z.Archive') "default-app capability $extension"
+  Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/New7z/Capabilities/FileAssociations' -Name $extension) -eq "New7z$extension") "default-app capability $extension"
   $key=$registry.OpenSubKey("Software\Classes\$extension\OpenWithProgids")
-  try{Check ($key.GetValueNames().Contains('New7z.Archive')) "Open With registration $extension"}finally{$key.Dispose()}
+  try{Check ($key.GetValueNames().Contains("New7z$extension")) "Open With registration $extension"}finally{$key.Dispose()}
+  Check ((Get-ItemPropertyValue -LiteralPath "HKCU:/Software/Classes/New7z$extension/DefaultIcon" -Name '(default)') -eq "$runtime\Assets\Formats\$($extension.Substring(1)).ico") "format icon $extension"
  }
  $repairScript="$runtime/Installer/Integrate-Shell.ps1"
  $registry.DeleteSubKeyTree('Software\Classes\Directory\shell\New7z',$false)
@@ -108,6 +110,7 @@ try{
  Uninstall
  Check (!(Test-Path -LiteralPath $uninstallRegistry)) 'uninstall removes only test product registration'
  foreach($path in @('HKCU:/Software/Classes/*/shell/New7z','HKCU:/Software/Classes/Directory/shell/New7z','HKCU:/Software/Classes/New7z.Archive','HKCU:/Software/New7z/Capabilities')){Check (!(Test-Path -LiteralPath $path)) "uninstall removes $path"}
+ foreach($extension in @('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')){Check (!(Test-Path -LiteralPath "HKCU:/Software/Classes/New7z$extension")) "uninstall removes ProgID $extension"}
  $key=$registry.OpenSubKey('Software\RegisteredApplications');try{Check (!$key.GetValueNames().Contains('New7z')) 'uninstall removes owned Default Apps entry'}finally{$key.Dispose()}
  Check (!(Test-Path -LiteralPath "$runtime/New7z.App.exe")) 'uninstall removes installed executable'
  Check ((Preferences -ExceptCompressMenu) -eq $preferencesBefore) 'upgrade and uninstall preserve menu preferences'

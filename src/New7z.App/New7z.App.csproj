@@ -11,6 +11,7 @@
   <ItemGroup Condition="'$(TrimRelease)' == 'true'"><TrimmerRootDescriptor Include="TrimmerRoots.xml" /></ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260803003" /><ProjectReference Include="../New7z.Core/New7z.Core.csproj" /></ItemGroup>
   <ItemGroup><Content Update="Assets/New7z.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="Assets/Formats/*.ico;Assets/Formats/*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../installer/Integrate-Shell.ps1" Link="Installer/Integrate-Shell.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../图标/logo.png" Link="Assets/logo.png" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../artifacts/native/x64/*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /><Content Include="../../7zSdk/Source/DOC/License.txt" Link="Licenses/7-Zip-License.txt" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../7zSdk/Source/DOC/copying.txt" Link="Licenses/LGPL.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <!-- Unpackaged publish does not automatically include the app PRI/XBF in this SDK. -->

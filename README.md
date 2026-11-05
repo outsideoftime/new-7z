@@ -1,6 +1,6 @@
 # New7z
 
-Windows 11 Fluent Design 风格的本地压缩工具，基于 WinUI 3 和 7-Zip 引擎。作者：**王国梁**。当前预览版：**0.1.9**，Windows 11 x64。
+Windows 11 Fluent Design 风格的本地压缩工具，基于 WinUI 3 和 7-Zip 引擎。作者：**王国梁**。当前预览版：**0.1.10**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 

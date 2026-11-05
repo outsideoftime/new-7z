@@ -3,7 +3,7 @@
   <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <ScrollViewer x:Name="TaskScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
    <StackPanel x:Name="TaskBody" Spacing="20" Padding="28,24,28,20">
-    <Grid ColumnSpacing="14" Background="Transparent" PointerPressed="DragHeader_PointerPressed"><Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Grid ColumnSpacing="14" Background="Transparent" PointerPressed="DragHeader_PointerPressed" PointerMoved="DragHeader_PointerMoved" PointerReleased="DragHeader_PointerReleased" PointerCaptureLost="DragHeader_PointerReleased"><Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <Image x:Name="BrandImage" Width="44" Height="44" VerticalAlignment="Top"/>
      <StackPanel Grid.Column="1" Spacing="4"><TextBlock x:Name="Heading" Text="准备任务" FontSize="22" FontWeight="SemiBold"/><TextBlock x:Name="SourceText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxHeight="56" TextTrimming="CharacterEllipsis"/></StackPanel>
     </Grid>

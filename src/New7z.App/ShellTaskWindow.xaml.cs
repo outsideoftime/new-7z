@@ -42,16 +42,33 @@ public sealed partial class ShellTaskWindow:Window
         Closed+=(_,_)=>{windowClosed=true;cancellation.Dispose();};
     }
     // The content header moves the window; there is no native caption or caption buttons.
+    private bool dragging;
+    private int dragCursorX,dragCursorY,dragWindowX,dragWindowY;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint{public int X;public int Y;}
     [DllImport("user32.dll")]
     [return:MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ReleaseCapture();
-    [DllImport("user32.dll",EntryPoint="SendMessageW")]
-    private static extern nint SendMessage(nint window,uint message,nint wParam,nint lParam);
+    private static extern bool GetCursorPos(out NativePoint point);
     private void DragHeader_PointerPressed(object sender,Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
     {
-        if(activeDialog!=null||!args.GetCurrentPoint(Root).Properties.IsLeftButtonPressed)return;
-        args.Handled=true;ReleaseCapture();
-        SendMessage(WindowNative.GetWindowHandle(this),0x00A1,2,0); // WM_NCLBUTTONDOWN / HTCAPTION
+        if(activeDialog!=null)return;
+        var point=args.GetCurrentPoint(Root);
+        if(args.Pointer.PointerDeviceType==Microsoft.UI.Input.PointerDeviceType.Mouse&&!point.Properties.IsLeftButtonPressed)return;
+        if(!GetCursorPos(out var cursor))return;
+        dragging=true;dragCursorX=cursor.X;dragCursorY=cursor.Y;
+        dragWindowX=AppWindow.Position.X;dragWindowY=AppWindow.Position.Y;
+        ((UIElement)sender).CapturePointer(args.Pointer);args.Handled=true;
+    }
+    private void DragHeader_PointerMoved(object sender,Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if(!dragging)return;
+        if(GetCursorPos(out var cursor))AppWindow.Move(new Windows.Graphics.PointInt32(dragWindowX+(cursor.X-dragCursorX),dragWindowY+(cursor.Y-dragCursorY)));
+        args.Handled=true;
+    }
+    private void DragHeader_PointerReleased(object sender,Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if(!dragging)return;
+        dragging=false;((UIElement)sender).ReleasePointerCapture(args.Pointer);args.Handled=true;
     }
     private async void Root_KeyDown(object sender,Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
     {
@@ -73,7 +90,10 @@ public sealed partial class ShellTaskWindow:Window
         var scale=Root.XamlRoot.RasterizationScale;
         var area=DisplayArea.GetFromWindowId(AppWindow.Id,DisplayAreaFallback.Primary).WorkArea;
         var width=Math.Min((int)(600*scale),area.Width-32);
-        var height=Math.Min((int)Math.Ceiling(heightDip*scale),area.Height-32);
+        // MoveAndResize takes the outer window rect; add the non-client frame so the
+        // client area is tall enough and the ScrollViewer does not show a scrollbar.
+        var frame=Math.Max(0,AppWindow.Size.Height-AppWindow.ClientSize.Height);
+        var height=Math.Min((int)Math.Ceiling(heightDip*scale)+frame,area.Height-32);
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X+(area.Width-width)/2,area.Y+(area.Height-height)/2,width,height));
     }
     private async void Loaded(object sender,RoutedEventArgs args)

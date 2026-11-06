@@ -45,6 +45,9 @@ try{
  $identity=Join-Path $payload 'ShellIdentity'
  New-Item -ItemType Directory -Path "$identity/Assets" -Force | Out-Null
  Copy-Item -LiteralPath 'shell/AppxManifest.xml' -Destination "$identity/AppxManifest.xml" -Force
+ $manifestText=Get-Content -LiteralPath "$identity/AppxManifest.xml" -Raw
+ $manifestText=[regex]::Replace($manifestText,'(<Identity[^>]*Version=")[0-9.]+(")',('${1}'+$version+'.0${2}'))
+ Set-Content -LiteralPath "$identity/AppxManifest.xml" -Value $manifestText -Encoding utf8
  Copy-Item -LiteralPath '图标/logo.png' -Destination "$identity/Assets/logo.png" -Force
  $sdk=Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Directory | Where-Object {$_.Name -match '^10\.' -and (Test-Path -LiteralPath "$($_.FullName)/x64/makeappx.exe")} | Sort-Object {[version]$_.Name} -Descending | Select-Object -First 1
  if(!$sdk){throw 'Windows SDK MakeAppx not found.'}

@@ -64,6 +64,7 @@ function Uninstall {
 try{
  Run-Setup '' 'install-modern.log'
  $state=Get-Content -LiteralPath "$install/installation.json" -Raw | ConvertFrom-Json
+ Check ($state.Version -eq $manifest.Version) 'installation state records the installed version'
  Check ($state.MenuMode -in @('modern+classic','classic')) 'compatible menu always registered'
  $runtime=$state.RuntimeDirectory
  Check ($runtime.StartsWith($install+'\',[StringComparison]::OrdinalIgnoreCase)) 'runtime is inside selected directory'
@@ -103,7 +104,16 @@ try{
  Check ($appProcess.ExitCode -eq 0 -and (Test-Path $reportPath)) 'installed app starts with bundled runtime and no SDK on PATH'
  $appProcess=$null;$report=Get-Content $reportPath -Raw | ConvertFrom-Json
  Check ($report.Result -eq 'PASS' -and $report.ArchiveBinding -and $report.Text -and $report.Image) 'trimmed settings, XAML bindings, text and image preview'
+ $oldRuntime=Join-Path $install 'Versions/0.0.9-oldtest'
+ New-Item -ItemType Directory -Path $oldRuntime -Force | Out-Null
+ Set-Content -LiteralPath (Join-Path $oldRuntime 'old.txt') -Value 'old version'
+ $dumpDir=Join-Path $env:LOCALAPPDATA 'CrashDumps'
+ $testDump=Join-Path $dumpDir 'New7z.App.exe.999999.dmp'
+ New-Item -ItemType Directory -Path $dumpDir -Force | Out-Null
+ Set-Content -LiteralPath $testDump -Value 'test dump'
  Run-Setup '/CLASSICMENU=1' 'upgrade-classic.log'
+ Check (!(Test-Path -LiteralPath $oldRuntime)) 'upgrade removes previous runtime directories'
+ Check (!(Test-Path -LiteralPath $testDump)) 'upgrade removes New7z crash dumps'
  $state=Get-Content -LiteralPath "$install/installation.json" -Raw | ConvertFrom-Json
  Check ($state.MenuMode -eq 'classic') 'compatible-only install works without modern package'
  Check ((Get-ItemPropertyValue -LiteralPath $uninstallRegistry -Name DisplayVersion) -eq $manifest.Version) 'upgrade retains one test uninstall registration'

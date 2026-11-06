@@ -195,7 +195,11 @@ try{
  if($EnableAssociations -eq '1'){Register-Associations}else{Remove-Associations;Remove-OpenWith}
  Notify-Explorer
  if($mode -eq 'modern+classic'){$packageFullName=(Get-AppxPackage -Name New7z.ContextMenu | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1).PackageFullName}
- $state=[ordered]@{Version='0.1.15';RuntimeDirectory=$RuntimeDirectory;MenuMode=$mode;AssociationsRegistered=($EnableAssociations -eq '1');PackageFullName=$packageFullName;ModernMenuDetail=$modernError;InstalledAt=[DateTimeOffset]::Now.ToString('o')}
+ $stateVersion=$null
+ if($RuntimeDirectory){$stateVersion=(Split-Path $RuntimeDirectory -Leaf).Split('-')[0]}
+ if(!$stateVersion -and (Test-Path -LiteralPath $statePath)){$stateVersion=((Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).Version)}
+ if(!$stateVersion){$stateVersion='unknown'}
+ $state=[ordered]@{Version=$stateVersion;RuntimeDirectory=$RuntimeDirectory;MenuMode=$mode;AssociationsRegistered=($EnableAssociations -eq '1');PackageFullName=$packageFullName;ModernMenuDetail=$modernError;InstalledAt=[DateTimeOffset]::Now.ToString('o')}
  [IO.File]::WriteAllText($statePath,($state | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($true))
  exit 0
 }catch{

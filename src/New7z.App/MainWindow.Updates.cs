@@ -37,7 +37,7 @@ public sealed partial class MainWindow
             panel.Children.Add(new ScrollViewer{Content=notes,MaxHeight=260,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
             panel.Children.Add(Text("安装包从 GitHub Releases 下载，运行前会与同版本发布的 SHA256SUMS.txt 比对。",12));
             var dialog=Dialog("发现新版本 "+update.Version.ToString(3),new ScrollViewer{Content=panel,MaxWidth=560},"下载并安装");
-            if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
+            if(await ShowDialogAsync(dialog)!=ContentDialogResult.Primary)return;
             await DownloadAndPromptAsync(update,false);
         }
         catch(Exception ex){if(interactive)Notify("检查更新失败："+ex.Message,InfoBarSeverity.Warning);}
@@ -65,7 +65,7 @@ public sealed partial class MainWindow
             Message.IsOpen=false;
             var confirm=Dialog("安装新版本？",Text($"New7z {update.Version.ToString(3)} 已下载并通过 SHA-256 校验。\n\n点击「立即安装」后应用会退出并运行安装程序；完成后可从开始菜单再次打开 New7z。"),"立即安装");
             confirm.DefaultButton=ContentDialogButton.Close;
-            if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;
+            if(await ShowDialogAsync(confirm)!=ContentDialogResult.Primary)return;
             LaunchInstaller(target);
         }
         catch(Exception ex){if(silent)Message.IsOpen=false;else Notify("下载更新失败："+ex.Message,InfoBarSeverity.Error);}

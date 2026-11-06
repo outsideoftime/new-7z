@@ -4,7 +4,7 @@ public partial class App:Application
 {
     public static MainWindow? Window { get; private set; }
     private Microsoft.UI.Xaml.Window? taskWindow;
-    public App(){InitializeComponent();UnhandledException+=(_,e)=>{System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),"New7z-error.log"),e.Exception+Environment.NewLine);};}
+    public App(){InitializeComponent();UnhandledException+=(_,e)=>{try{var folder=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"New7z");Directory.CreateDirectory(folder);System.IO.File.AppendAllText(System.IO.Path.Combine(folder,"error.log"),DateTimeOffset.Now.ToString("o")+" "+e.Exception+Environment.NewLine);}catch{}};}
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         var command=Environment.GetCommandLineArgs().Skip(1).ToArray();

@@ -100,7 +100,7 @@ public sealed partial class MainWindow:Window
         var recent=Stack(8);recent.Children.Add(Text("最近使用",18,true));
         foreach(var path in settings.Recent.Take(12)){var row=new Grid{ColumnSpacing=12};row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});var icon=FormatIcon(path);if(icon!=null){icon.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(icon);}var name=Text(System.IO.Path.GetFileName(path),14,true);var labels=Stack(3);labels.Children.Add(name);var location=Text(path,12);location.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];labels.Children.Add(location);Grid.SetColumn(labels,1);row.Children.Add(labels);var open=Button("打开",async(_,_)=>await OpenArchiveAsync(path));Grid.SetColumn(open,2);row.Children.Add(open);recent.Children.Add(Card(row));}
         if(settings.Recent.Count==0)recent.Children.Add(Text("还没有最近记录。打开一份压缩包开始。"));
-        else recent.Children.Add(Button("清空最近记录",async(_,_)=>{var d=Dialog("清空最近记录？",Text("仅移除应用内记录，不删除文件。"),"清空记录");if(await d.ShowAsync()==ContentDialogResult.Primary){settings.Recent.Clear();settings.Save();ShowHome();}}));
+        else recent.Children.Add(Button("清空最近记录",async(_,_)=>{var d=Dialog("清空最近记录？",Text("仅移除应用内记录，不删除文件。"),"清空记录");if(await ShowDialogAsync(d)==ContentDialogResult.Primary){settings.Recent.Clear();settings.Save();ShowHome();}}));
         content.Children.Add(recent);ShowContent(new ScrollViewer{Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
     }
     private async Task<string?> PickArchiveAsync()
@@ -121,7 +121,7 @@ public sealed partial class MainWindow:Window
     }
     private async Task<string?> AskPasswordAsync()
     {
-        var box=new PasswordBox{Header="压缩包密码",PasswordRevealMode=PasswordRevealMode.Peek};var d=Dialog("输入密码",box,"打开");return await d.ShowAsync()==ContentDialogResult.Primary?box.Password:null;
+        var box=new PasswordBox{Header="压缩包密码",PasswordRevealMode=PasswordRevealMode.Peek};var d=Dialog("输入密码",box,"打开");return await ShowDialogAsync(d)==ContentDialogResult.Primary?box.Password:null;
     }
     private async Task OpenArchiveAsync(string path,bool remember=true)
     {
@@ -197,6 +197,20 @@ public sealed partial class MainWindow:Window
     }
     private async Task ActivateRowAsync(ArchiveEntry entry){if(entry.IsDirectory){folder=entry.NormalizedPath;query="";ShowArchive();}else await ShowPreviewAsync(entry);}
     private ContentDialog Dialog(string title,UIElement content,string primary="确定")=>new(){Title=title,Content=content,PrimaryButtonText=primary,CloseButtonText="取消",DefaultButton=ContentDialogButton.Primary,XamlRoot=Root.XamlRoot,RequestedTheme=Root.RequestedTheme};
+    private readonly SemaphoreSlim dialogGate=new(1,1);
+    // WinUI allows only one ContentDialog at a time; a second ShowAsync (for example from a
+    // fast second click) throws and used to crash the app as an unhandled async exception.
+    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
+    {
+        await dialogGate.WaitAsync();
+        try
+        {
+            if(Root.XamlRoot==null)return ContentDialogResult.None;
+            return await dialog.ShowAsync();
+        }
+        catch(Exception ex){Notify("无法显示对话框："+ex.Message,InfoBarSeverity.Error);return ContentDialogResult.None;}
+        finally{dialogGate.Release();}
+    }
     private async Task CreateDialogAsync(List<string>? sources=null)
     {
         sources??=[];var panel=Stack(14);var list=Text(sources.Count>0?string.Join(Environment.NewLine,sources):"请选择来源文件或文件夹",12);panel.Children.Add(list);
@@ -207,14 +221,14 @@ public sealed partial class MainWindow:Window
         var secret=new PasswordBox{Header="密码（可选）",PasswordRevealMode=PasswordRevealMode.Peek};var encrypt=new CheckBox{Content="加密文件名（仅 7z）",IsEnabled=false};secret.PasswordChanged+=(_,_)=>{encrypt.IsEnabled=secret.Password.Length>0&&format.SelectedIndex==0;if(!encrypt.IsEnabled)encrypt.IsChecked=false;};format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());encrypt.IsEnabled=secret.Password.Length>0&&format.SelectedIndex==0;if(!encrypt.IsEnabled)encrypt.IsChecked=false;};panel.Children.Add(secret);panel.Children.Add(encrypt);
         var error=Text("",12);error.Foreground=new SolidColorBrush(Colors.Firebrick);panel.Children.Add(error);
         var dialog=Dialog("新建压缩包",new ScrollViewer{Content=panel,MaxHeight=560,MinWidth=480},"开始压缩");dialog.PrimaryButtonClick+=(_,e)=>{if(sources.Count==0||string.IsNullOrWhiteSpace(output.Text)){error.Text="请选择来源并填写输出路径。";e.Cancel=true;}else if(File.Exists(output.Text)){error.Text="输出文件已存在，请改用一个新名称。";e.Cancel=true;}};
-        if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
+        if(await ShowDialogAsync(dialog)!=ContentDialogResult.Primary)return;
         var target=output.Text;var inputs=sources.ToArray();var kind=format.SelectedItem.ToString()!;var compression=level.SelectedIndex switch{1=>1,2=>9,_=>5};var key=secret.Password;var header=encrypt.IsChecked==true;
         QueueJob("压缩 "+System.IO.Path.GetFileName(target),target,(p,ct)=>engine.CreateAsync(target,inputs,kind,compression,key,header,p,ct));
     }
     private async Task ExtractDialogAsync(IReadOnlyList<ArchiveEntry> selected)
     {
-        if(archive==null||selected.Count==0){Notify("没有可以解压的条目。");return;}var panel=Stack(14);panel.Children.Add(Text($"{System.IO.Path.GetFileName(archive)} · {selected.Count} 项"));var dest=Input("目标目录",System.IO.Path.Combine(System.IO.Path.GetDirectoryName(archive)!,System.IO.Path.GetFileNameWithoutExtension(archive)));panel.Children.Add(dest);panel.Children.Add(Button("选择文件夹",async(_,_)=>{var path=await PickFolderAsync();if(path!=null)dest.Text=path;}));var conflict=new ComboBox{Header="遇到同名文件",ItemsSource=new[]{"自动重命名，保留两者","跳过已有文件","替换已有文件"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};panel.Children.Add(conflict);var note=Text("只写入选定目录；不删除源压缩包。",12);panel.Children.Add(note);var d=Dialog("解压到",panel,"开始解压");d.PrimaryButtonClick+=(_,e)=>{if(string.IsNullOrWhiteSpace(dest.Text)){e.Cancel=true;note.Text="请输入目标目录。";}};if(await d.ShowAsync()!=ContentDialogResult.Primary)return;
-        if(conflict.SelectedIndex==2){var confirm=Dialog("替换同名文件？",Text($"本次解压遇到同名文件时，将替换目标目录中的现有文件：\n{dest.Text}"),"替换并解压");confirm.DefaultButton=ContentDialogButton.Close;if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;}
+        if(archive==null||selected.Count==0){Notify("没有可以解压的条目。");return;}var panel=Stack(14);panel.Children.Add(Text($"{System.IO.Path.GetFileName(archive)} · {selected.Count} 项"));var dest=Input("目标目录",System.IO.Path.Combine(System.IO.Path.GetDirectoryName(archive)!,System.IO.Path.GetFileNameWithoutExtension(archive)));panel.Children.Add(dest);panel.Children.Add(Button("选择文件夹",async(_,_)=>{var path=await PickFolderAsync();if(path!=null)dest.Text=path;}));var conflict=new ComboBox{Header="遇到同名文件",ItemsSource=new[]{"自动重命名，保留两者","跳过已有文件","替换已有文件"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};panel.Children.Add(conflict);var note=Text("只写入选定目录；不删除源压缩包。",12);panel.Children.Add(note);var d=Dialog("解压到",panel,"开始解压");d.PrimaryButtonClick+=(_,e)=>{if(string.IsNullOrWhiteSpace(dest.Text)){e.Cancel=true;note.Text="请输入目标目录。";}};if(await ShowDialogAsync(d)!=ContentDialogResult.Primary)return;
+        if(conflict.SelectedIndex==2){var confirm=Dialog("替换同名文件？",Text($"本次解压遇到同名文件时，将替换目标目录中的现有文件：\n{dest.Text}"),"替换并解压");confirm.DefaultButton=ContentDialogButton.Close;if(await ShowDialogAsync(confirm)!=ContentDialogResult.Primary)return;}
         var current=archive;var key=password;
         if(selected.Any(e=>e.Encrypted)&&string.IsNullOrEmpty(key)){key=await AskPasswordAsync();if(key==null)return;password=key;}
         var target=dest.Text;var policy=(ConflictPolicy)conflict.SelectedIndex;
@@ -235,7 +249,7 @@ public sealed partial class MainWindow:Window
         var error=Text("",12);error.Foreground=new SolidColorBrush(Colors.Firebrick);panel.Children.Add(error);
         var dialog=Dialog("向压缩包添加文件",new ScrollViewer{Content=panel,MaxHeight=520,MinWidth=480},"添加");
         dialog.PrimaryButtonClick+=(_,e)=>{if(sources.Count==0){error.Text="请先选择文件或文件夹。";e.Cancel=true;}};
-        if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
+        if(await ShowDialogAsync(dialog)!=ContentDialogResult.Primary)return;
         await AddSourcesAsync(sources);
     }
     private async Task AddSourcesAsync(IReadOnlyList<string> sources)
@@ -255,7 +269,7 @@ public sealed partial class MainWindow:Window
             var more=conflicts.Count>10?$"\n…共 {conflicts.Count} 项":"";
             var confirm=Dialog("替换压缩包内的同名条目？",Text($"压缩包中已存在以下同名条目，继续将用新文件替换：\n\n{preview}{more}"),"替换并添加");
             confirm.DefaultButton=ContentDialogButton.Close;
-            if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;
+            if(await ShowDialogAsync(confirm)!=ContentDialogResult.Primary)return;
         }
         var key=await EnsurePasswordAsync();
         if(key is null)return;
@@ -289,7 +303,7 @@ public sealed partial class MainWindow:Window
         var more=selected.Count>10?$"\n…共 {selected.Count} 项":"";
         var confirm=Dialog("删除压缩包内的条目？",Text($"将从 {System.IO.Path.GetFileName(archive)} 删除 {selected.Count} 项：\n\n{preview}{more}\n\n压缩包会被重新生成，删除的内容不会进入回收站，也无法撤销。"),"删除");
         confirm.DefaultButton=ContentDialogButton.Close;
-        if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;
+        if(await ShowDialogAsync(confirm)!=ContentDialogResult.Primary)return;
         var key=await EnsurePasswordAsync();
         if(key is null)return;
         var current=archive;var paths=selected.Select(e=>e.NormalizedPath).Distinct(StringComparer.Ordinal).ToArray();
@@ -427,7 +441,7 @@ public sealed partial class MainWindow:Window
     {
         var content=Stack(18);content.Children.Add(Text("任务中心",28,true));content.Children.Add(Text("任务在后台排队运行，切换页面不会中断。"));
         if(jobs.Count==0)content.Children.Add(Card(Text("还没有任务。新建压缩或解压后，可在这里查看进度。")));
-        foreach(var job in jobs){var card=Stack(10);card.DataContext=job;card.Children.Add(Text(job.Title,16,true));card.Children.Add(Text(job.Destination,12));var status=Text("");status.SetBinding(TextBlock.TextProperty,new Microsoft.UI.Xaml.Data.Binding{Path=new PropertyPath("Status")});card.Children.Add(status);var bar=new ProgressBar{Minimum=0,Maximum=100};bar.SetBinding(ProgressBar.ValueProperty,new Microsoft.UI.Xaml.Data.Binding{Path=new PropertyPath("Percent")});card.Children.Add(bar);var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};var cancel=Button("取消任务",async(_,_)=>{var d=Dialog("取消任务？",Text("已完成的文件将保留，当前未完成的临时文件会清理。"),"取消任务");d.DefaultButton=ContentDialogButton.Close;if(await d.ShowAsync()==ContentDialogResult.Primary)job.Cancellation.Cancel();});cancel.SetBinding(Control.IsEnabledProperty,new Microsoft.UI.Xaml.Data.Binding{Path=new PropertyPath("CanCancel")});actions.Children.Add(cancel);actions.Children.Add(Button("打开文件夹",(_,_)=>{var path=Directory.Exists(job.Destination)?job.Destination:System.IO.Path.GetDirectoryName(job.Destination);if(path!=null&&Directory.Exists(path)){var info=new ProcessStartInfo("explorer.exe"){UseShellExecute=false};info.ArgumentList.Add(path);Process.Start(info);}}));card.Children.Add(actions);content.Children.Add(Card(card));}
+        foreach(var job in jobs){var card=Stack(10);card.DataContext=job;card.Children.Add(Text(job.Title,16,true));card.Children.Add(Text(job.Destination,12));var status=Text("");status.SetBinding(TextBlock.TextProperty,new Microsoft.UI.Xaml.Data.Binding{Path=new PropertyPath("Status")});card.Children.Add(status);var bar=new ProgressBar{Minimum=0,Maximum=100};bar.SetBinding(ProgressBar.ValueProperty,new Microsoft.UI.Xaml.Data.Binding{Path=new PropertyPath("Percent")});card.Children.Add(bar);var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};var cancel=Button("取消任务",async(_,_)=>{var d=Dialog("取消任务？",Text("已完成的文件将保留，当前未完成的临时文件会清理。"),"取消任务");d.DefaultButton=ContentDialogButton.Close;if(await ShowDialogAsync(d)==ContentDialogResult.Primary)job.Cancellation.Cancel();});cancel.SetBinding(Control.IsEnabledProperty,new Microsoft.UI.Xaml.Data.Binding{Path=new PropertyPath("CanCancel")});actions.Children.Add(cancel);actions.Children.Add(Button("打开文件夹",(_,_)=>{var path=Directory.Exists(job.Destination)?job.Destination:System.IO.Path.GetDirectoryName(job.Destination);if(path!=null&&Directory.Exists(path)){var info=new ProcessStartInfo("explorer.exe"){UseShellExecute=false};info.ArgumentList.Add(path);Process.Start(info);}}));card.Children.Add(actions);content.Children.Add(Card(card));}
         ShowContent(new ScrollViewer{Content=content});
     }
     private void ApplyTheme(){Root.RequestedTheme=settings.Theme switch{"浅色"=>ElementTheme.Light,"深色"=>ElementTheme.Dark,_=>ElementTheme.Default};}
@@ -442,7 +456,7 @@ public sealed partial class MainWindow:Window
     private async void OnClosing(AppWindow sender,AppWindowClosingEventArgs args)
     {
         if(closingApproved||!jobs.Any(j=>j.CanCancel))return;args.Cancel=true;
-        try{var d=Dialog("任务尚未完成",Text("取消任务后退出？已完成输出会保留。"),"取消任务并退出");d.DefaultButton=ContentDialogButton.Close;if(await d.ShowAsync()!=ContentDialogResult.Primary)return;foreach(var job in jobs.Where(j=>j.CanCancel))job.Cancellation.Cancel();while(jobs.Any(j=>j.CanCancel))await Task.Delay(100);closingApproved=true;Close();}catch{args.Cancel=true;}
+        try{var d=Dialog("任务尚未完成",Text("取消任务后退出？已完成输出会保留。"),"取消任务并退出");d.DefaultButton=ContentDialogButton.Close;if(await ShowDialogAsync(d)!=ContentDialogResult.Primary)return;foreach(var job in jobs.Where(j=>j.CanCancel))job.Cancellation.Cancel();while(jobs.Any(j=>j.CanCancel))await Task.Delay(100);closingApproved=true;Close();}catch{args.Cancel=true;}
     }
 }
 

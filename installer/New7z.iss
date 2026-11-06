@@ -1,5 +1,5 @@
 #ifndef AppVersion
- #define AppVersion "0.1.17"
+ #define AppVersion "0.1.18"
 #endif
 #ifndef BuildId
  #error BuildId is required
@@ -68,6 +68,86 @@ Name: "{userdesktop}\New7z"; Filename: "{app}\{#RuntimeDir}\New7z.App.exe"; Work
 Filename: "{app}\{#RuntimeDir}\New7z.App.exe"; Description: "启动 New7z"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
+const
+  MOVEFILE_DELAY_UNTIL_REBOOT = 4;
+
+function MoveFileExW(lpExistingFileName, lpNewFileName: String; dwFlags: Cardinal): Boolean;
+  external 'MoveFileExW@kernel32.dll stdcall';
+
+procedure ScheduleDelete(const FileName: String);
+begin
+  if not DeleteFile(FileName) then begin
+    if MoveFileExW(FileName, '', MOVEFILE_DELAY_UNTIL_REBOOT) then
+      Log('Scheduled for deletion after reboot: ' + FileName)
+    else
+      Log('Could not delete or schedule: ' + FileName);
+  end;
+end;
+
+procedure DeleteTree(const Dir: String);
+var
+  FindRec: TFindRec;
+  Item: String;
+begin
+  if FindFirst(Dir + '\*', FindRec) then
+  try
+    repeat
+      if (FindRec.Name <> '.') and (FindRec.Name <> '..') then begin
+        Item := Dir + '\' + FindRec.Name;
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          DeleteTree(Item)
+        else
+          ScheduleDelete(Item);
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+  RemoveDir(Dir);
+end;
+
+procedure CleanOldRuntimes;
+var
+  VersionsDir, TargetName, Dir: String;
+  FindRec: TFindRec;
+begin
+  VersionsDir := ExpandConstant('{app}\Versions');
+  TargetName := '{#AppVersion}-{#BuildId}';
+  if not FindFirst(VersionsDir + '\*', FindRec) then exit;
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
+        and (FindRec.Name <> '.') and (FindRec.Name <> '..')
+        and (FindRec.Name <> TargetName) then begin
+        Dir := VersionsDir + '\' + FindRec.Name;
+        Log('Removing previous runtime: ' + Dir);
+        DeleteTree(Dir);
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+procedure CleanCrashDumps;
+var
+  DumpDir: String;
+  FindRec: TFindRec;
+begin
+  DumpDir := ExpandConstant('{localappdata}\CrashDumps');
+  if not FindFirst(DumpDir + '\New7z.App.exe.*.dmp', FindRec) then exit;
+  try
+    repeat
+      if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then begin
+        Log('Removing New7z crash dump: ' + FindRec.Name);
+        ScheduleDelete(DumpDir + '\' + FindRec.Name);
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
 function IntegrationParameters(Action: String; IncludeRuntime: Boolean): String;
 var Enabled, Associated, ClassicOnly: String;
 begin
@@ -87,7 +167,11 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var ResultCode: Integer;
 begin
-  if CurStep = ssPostInstall then begin
+  if CurStep = ssInstall then begin
+    CleanOldRuntimes;
+    CleanCrashDumps;
+  end
+  else if CurStep = ssPostInstall then begin
     if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
       IntegrationParameters('Install', True), '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
       or (ResultCode <> 0) then begin
@@ -110,5 +194,6 @@ begin
 end;
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\Versions"
 Type: files; Name: "{app}\installation.json"
 Type: files; Name: "{app}\integration-error.txt"

@@ -35,7 +35,7 @@ public sealed partial class MainWindow
         var host=new Grid{Height=Math.Clamp(AppWindow.ClientSize.Height/Root.XamlRoot.RasterizationScale-310,180,430),Background=(Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],CornerRadius=new CornerRadius(6)};panel.Children.Add(host);
         var metadata=Text("",12);panel.Children.Add(metadata);
         var preview=new ContentDialog{Title=initial.Name,Content=panel,CloseButtonText="关闭预览",XamlRoot=Root.XamlRoot,RequestedTheme=Root.RequestedTheme};preview.Resources["ContentDialogMaxWidth"]=1100d;
-        var previewTask=preview.ShowAsync();
+        var previewTask=ShowDialogAsync(preview);
         Image? image=null;BitmapImage? bitmap=null;
         void RenderText()
         {

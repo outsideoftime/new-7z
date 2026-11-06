@@ -116,9 +116,26 @@ public sealed partial class MainWindow:Window
         var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};actions.Children.Add(Button(T("打开压缩包","Open archive"),async(_,_)=>{var f=await PickArchiveAsync();if(f!=null)await OpenArchiveAsync(f);}));actions.Children.Add(Button(T("新建压缩","New archive"),async(_,_)=>await CreateDialogAsync(),true));content.Children.Add(actions);
         var drop=Stack(10);drop.Children.Add(Text(T("把文件或文件夹拖到窗口","Drop files or folders here"),22,true));drop.Children.Add(Text(T("压缩包可查看内容，普通文件可打包为 7z 或 ZIP。无需另装 7-Zip。","Open an archive to browse it, or pack files into 7z or ZIP. No separate 7-Zip needed.")));var pick=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};pick.Children.Add(Button(T("选择文件","Choose files"),async(_,_)=>{var paths=await PickFilesAsync();if(paths.Count>0)await CreateDialogAsync(paths);}));pick.Children.Add(Button(T("选择文件夹","Choose folder"),async(_,_)=>{var path=await PickFolderAsync();if(path!=null)await CreateDialogAsync([path]);}));drop.Children.Add(pick);content.Children.Add(Card(drop));
         var recent=Stack(8);recent.Children.Add(Text(T("最近使用","Recent"),18,true));
-        foreach(var path in settings.Recent.Take(12)){var row=new Grid{ColumnSpacing=12};row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});var icon=FormatIcon(path);if(icon!=null){icon.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(icon);}var name=Text(System.IO.Path.GetFileName(path),14,true);var labels=Stack(3);labels.Children.Add(name);var location=Text(path,12);location.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];labels.Children.Add(location);Grid.SetColumn(labels,1);row.Children.Add(labels);var open=Button(T("打开","Open"),async(_,_)=>await OpenArchiveAsync(path));Grid.SetColumn(open,2);row.Children.Add(open);recent.Children.Add(Card(row));}
+        var unavailable=settings.Recent.Count(p=>!File.Exists(p));
+        foreach(var path in settings.Recent.Take(12).ToList())
+        {
+            var exists=File.Exists(path);
+            var row=new Grid{ColumnSpacing=12};row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
+            var icon=FormatIcon(path);if(icon!=null){icon.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(icon);}
+            var labels=Stack(3);labels.Children.Add(Text(System.IO.Path.GetFileName(path),14,true));
+            var location=Text(exists?path:path+T("（文件不存在）"," (file not found)"),12);location.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];labels.Children.Add(location);Grid.SetColumn(labels,1);row.Children.Add(labels);
+            var open=Button(T("打开","Open"),async(_,_)=>await OpenArchiveAsync(path));open.IsEnabled=exists;Grid.SetColumn(open,2);row.Children.Add(open);
+            var remove=new Button{Content=T("移除","Remove"),Padding=new Thickness(10,4,10,4),VerticalAlignment=VerticalAlignment.Center};ToolTipService.SetToolTip(remove,T("从最近使用中移除这一条","Remove this item from Recent"));remove.Click+=(_,_)=>{settings.Recent.Remove(path);settings.Save();ShowHome();};Grid.SetColumn(remove,3);row.Children.Add(remove);
+            recent.Children.Add(Card(row));
+        }
         if(settings.Recent.Count==0)recent.Children.Add(Text(T("还没有最近记录。打开一份压缩包开始。","No recent items yet. Open an archive to start.")));
-        else recent.Children.Add(Button(T("清空最近记录","Clear recent"),async(_,_)=>{var d=Dialog(T("清空最近记录？","Clear recent items?"),Text(T("仅移除应用内记录，不删除文件。","This only clears the in-app list; files are not deleted.")),T("清空记录","Clear"));if(await ShowDialogAsync(d)==ContentDialogResult.Primary){settings.Recent.Clear();settings.Save();ShowHome();}}));
+        else
+        {
+            var actionsRow=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
+            if(unavailable>0)actionsRow.Children.Add(Button(T($"清理失效记录（{unavailable}）",$"Remove unavailable ({unavailable})"),(_,_)=>{settings.Recent.RemoveAll(p=>!File.Exists(p));settings.Save();ShowHome();}));
+            actionsRow.Children.Add(Button(T("清空最近记录","Clear recent"),async(_,_)=>{var d=Dialog(T("清空最近记录？","Clear recent items?"),Text(T("仅移除应用内记录，不删除文件。","This only clears the in-app list; files are not deleted.")),T("清空记录","Clear"));if(await ShowDialogAsync(d)==ContentDialogResult.Primary){settings.Recent.Clear();settings.Save();ShowHome();}}));
+            recent.Children.Add(actionsRow);
+        }
         content.Children.Add(recent);ShowContent(new ScrollViewer{Content=content,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
     }
     private async Task<string?> PickArchiveAsync()

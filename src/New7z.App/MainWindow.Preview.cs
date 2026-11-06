@@ -23,6 +23,9 @@ public sealed partial class MainWindow
     [DllImport("user32.dll")]
     [return:MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")]
+    [return:MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr window);
 
     private static bool InsideButton(object? source)
     {
@@ -76,10 +79,13 @@ public sealed partial class MainWindow
         header.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
         var headerTitle=Text(initial.Name,14,true);headerTitle.VerticalAlignment=VerticalAlignment.Center;headerTitle.TextTrimming=TextTrimming.CharacterEllipsis;
         header.Children.Add(headerTitle);
-        var closeButton=Button(T("关闭","Close"),(_,_)=>previewWindow.Close());closeButton.VerticalAlignment=VerticalAlignment.Center;closeButton.MinWidth=72;Grid.SetColumn(closeButton,1);header.Children.Add(closeButton);
+        var closeButton=new Button{Content=new FontIcon{Glyph="",FontSize=12},Width=36,Height=32,Padding=new Thickness(0),VerticalAlignment=VerticalAlignment.Center};
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(closeButton,T("关闭预览","Close preview"));ToolTipService.SetToolTip(closeButton,T("关闭预览","Close preview"));
+        closeButton.Click+=(_,_)=>previewWindow.Close();Grid.SetColumn(closeButton,1);header.Children.Add(closeButton);
         header.PointerPressed+=PreviewWindowDragHeader;header.PointerMoved+=PreviewWindowDragMoved;
         header.PointerReleased+=PreviewWindowDragReleased;header.PointerCaptureLost+=PreviewWindowDragReleased;
         root.Children.Add(header);
+        root.KeyDown+=(_,e)=>{if(e.Key==Windows.System.VirtualKey.Escape){e.Handled=true;previewWindow.Close();}};
 
         var body=new Grid{Padding=new Thickness(20,6,20,16),RowSpacing=10};
         body.RowDefinitions.Add(new(){Height=GridLength.Auto});
@@ -111,12 +117,18 @@ public sealed partial class MainWindow
         Grid.SetRow(body,1);root.Children.Add(body);
         previewWindow.Content=root;
 
-        var scale=Root.XamlRoot.RasterizationScale;var area=DisplayArea.GetFromWindowId(previewWindow.AppWindow.Id,DisplayAreaFallback.Primary).WorkArea;
+        var scale=Root.XamlRoot.RasterizationScale;
+        // Center on the display that holds the main window; a fresh window otherwise opens on the primary display.
+        var area=DisplayArea.GetFromWindowId(AppWindow.Id,DisplayAreaFallback.Primary).WorkArea;
         var width=Math.Min((int)(1100*scale),area.Width-60);var height=Math.Min((int)(800*scale),area.Height-60);
         previewWindow.AppWindow.MoveAndResize(new RectInt32(area.X+(area.Width-width)/2,area.Y+(area.Height-height)/2,width,height));
         var closed=new TaskCompletionSource();
         previewWindow.Closed+=(_,_)=>closed.TrySetResult();
         previewWindow.Activate();
+        try{previewWindow.AppWindow.MoveInZOrderAtTop();}catch{}
+        var previewHwnd=WinRT.Interop.WindowNative.GetWindowHandle(previewWindow);
+        SetForegroundWindow(previewHwnd);
+        previewWindow.DispatcherQueue.TryEnqueue(()=>{previewWindow.Activate();SetForegroundWindow(previewHwnd);});
 
         Image? image=null;BitmapImage? bitmap=null;
         void RenderText()

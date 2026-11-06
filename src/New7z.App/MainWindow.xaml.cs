@@ -162,9 +162,10 @@ public sealed partial class MainWindow:Window
         var secondaryActions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8,HorizontalAlignment=HorizontalAlignment.Right};
         secondaryActions.Children.Add(Button("预览",async(_,_)=>{if(fileList?.SelectedItems.Count==1)await ActivateRowAsync(((ArchiveRow)fileList.SelectedItem).Entry);else Notify("请选择一个文件以预览。");}));secondaryActions.Children.Add(Button("测试完整性",(_,_)=>{var current=archive;var pw=password;QueueJob("测试 "+System.IO.Path.GetFileName(current),current,(p,ct)=>engine.TestAsync(current,pw,p,ct));}));secondaryActions.Children.Add(Button("新建压缩",async(_,_)=>await CreateDialogAsync()));
         Grid.SetColumn(secondaryActions,2);actions.Children.Add(secondaryActions);Grid.SetRow(actions,1);grid.Children.Add(actions);
-        var pathbar=new Grid{ColumnSpacing=10};pathbar.ColumnDefinitions.Add(new(){Width=GridLength.Auto});pathbar.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});pathbar.ColumnDefinitions.Add(new(){Width=new GridLength(260)});
+        var pathbar=new Grid{ColumnSpacing=10};pathbar.ColumnDefinitions.Add(new(){Width=GridLength.Auto});pathbar.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});pathbar.ColumnDefinitions.Add(new(){Width=GridLength.Auto});pathbar.ColumnDefinitions.Add(new(){Width=new GridLength(260)});
         pathbar.Children.Add(Button("↑ 上一级",(_,_)=>{folder=folder.Contains('/')?folder[..folder.LastIndexOf('/')]:"";query="";ShowArchive();}));var pathText=Text("根目录"+(folder.Length>0?" / "+folder:""));pathText.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(pathText,1);pathbar.Children.Add(pathText);
-        searchBox=new TextBox{PlaceholderText="搜索当前目录",Text=query};Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(searchBox,"搜索当前目录");searchBox.TextChanged+=(_,_)=>{query=searchBox.Text;RefreshRows();};Grid.SetColumn(searchBox,2);pathbar.Children.Add(searchBox);Grid.SetRow(pathbar,2);grid.Children.Add(pathbar);
+        searchBox=new TextBox{PlaceholderText="搜索当前目录",Text=query};Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(searchBox,"搜索当前目录");searchBox.TextChanged+=(_,_)=>{query=searchBox.Text;RefreshRows();};Grid.SetColumn(searchBox,3);pathbar.Children.Add(searchBox);
+        var selectAll=Button("全选",(_,_)=>SelectAllRows());ToolTipService.SetToolTip(selectAll,"选中当前目录的所有条目（Ctrl+A）");Grid.SetColumn(selectAll,2);pathbar.Children.Add(selectAll);Grid.SetRow(pathbar,2);grid.Children.Add(pathbar);
         var table=new Grid();table.RowDefinitions.Add(new(){Height=GridLength.Auto});table.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
         var header=Text("       名称                                                     大小                 压缩后               修改时间",12);header.Margin=new Thickness(12,10,12,10);header.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];table.Children.Add(header);
         fileList=new ListView{SelectionMode=ListViewSelectionMode.Multiple,IsMultiSelectCheckBoxEnabled=true,HorizontalContentAlignment=HorizontalAlignment.Stretch};
@@ -175,7 +176,7 @@ public sealed partial class MainWindow:Window
             var elements=VisualTreeHelper.FindElementsInHostCoordinates(e.GetPosition(null),fileList).ToList();
             if(elements.Any(x=>x is CheckBox))return;
             if(elements.OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault() is { } row)await ActivateRowAsync(row.Entry);
-        };fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}else if(e.Key==VirtualKey.Delete){e.Handled=true;await DeleteSelectedAsync();}};
+        };fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}else if(e.Key==VirtualKey.Delete){e.Handled=true;await DeleteSelectedAsync();}else if(e.Key==VirtualKey.A&&IsControlDown()){e.Handled=true;SelectAllRows();}};
         // Custom drag gesture: ListView's built-in item drag raises DragStarting on the item
         // without a usable deferral, so the files must be prepared before StartDragAsync.
         fileList.AddHandler(UIElement.PointerPressedEvent,new PointerEventHandler(FileListPointerPressed),true);
@@ -323,6 +324,13 @@ public sealed partial class MainWindow:Window
             await engine.ModifyAsync(current,indices,[],key,p,ct);
         },false,ReloadArchiveAsync);
     }
+    private static bool IsControlDown()=>(Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)&Windows.UI.Core.CoreVirtualKeyStates.Down)!=0;
+    private void SelectAllRows()
+    {
+        if(fileList==null)return;
+        fileList.SelectedItems.Clear();
+        foreach(var item in fileList.Items.OfType<ArchiveRow>())fileList.SelectedItems.Add(item);
+    }
     // Rewriting an archive reads every kept entry, so an encrypted archive needs the password up front.
     // Returns null only when the user cancelled; an empty string means no password is needed.
     private async Task<string?> EnsurePasswordAsync()
@@ -372,7 +380,7 @@ public sealed partial class MainWindow:Window
         var pressed=dragPressRow;dragPressPoint=null;dragPressRow=null;
         if(pressed==null||archive==null||page!="archive"||previewOpen)return;
         // Pressing an unselected row drags that row; pressing inside a selection drags the selection.
-        if(!fileList.SelectedItems.OfType<ArchiveRow>().Any(item=>ReferenceEquals(item,pressed)))fileList.SelectedItem=pressed;
+        if(!fileList.SelectedItems.OfType<ArchiveRow>().Any(item=>ReferenceEquals(item,pressed))){fileList.SelectedItems.Clear();fileList.SelectedItems.Add(pressed);}
         var rows=fileList.SelectedItems.OfType<ArchiveRow>().Select(r=>r.Entry).ToList();
         if(rows.Count==0)rows=[pressed.Entry];
         dragGestureActive=true;string? temp=null;var started=false;
@@ -418,6 +426,7 @@ public sealed partial class MainWindow:Window
         e.Data.RequestedOperation=DataPackageOperation.Copy;
         e.Data.SetData(InternalDragFormat,"1");
         e.Data.SetStorageItems(storage,false);
+        e.DragUI.SetContentFromDataPackage();
         if(dragPayloadTitle!=null)e.Data.Properties.Title=dragPayloadTitle;
     }
     private void CleanupDragTemp()
@@ -450,7 +459,7 @@ public sealed partial class MainWindow:Window
     {
         var panel=Stack(22);panel.Children.Add(Text("设置",28,true));AddExplorerSettings(panel);AddUpdateSettings(panel);var theme=new ComboBox{Header="应用主题",ItemsSource=new[]{"系统","浅色","深色"},SelectedItem=settings.Theme,MinWidth=240};theme.SelectionChanged+=(_,_)=>{settings.Theme=theme.SelectedItem.ToString()!;settings.Save();ApplyTheme();};panel.Children.Add(Card(theme));
         var icon=Stack(12);icon.Children.Add(Text("应用内图标",18,true));icon.Children.Add(Text("替换应用内品牌图标。不会修改 EXE、任务栏或系统文件关联。",12));var preview=new Image{Width=96,Height=96,HorizontalAlignment=HorizontalAlignment.Left,Source=BrandImage.Source};icon.Children.Add(preview);icon.Children.Add(Button("替换 PNG 图标",async(_,_)=>{try{var picker=new FileOpenPicker();InitializeWithWindow.Initialize(picker,Hwnd);picker.FileTypeFilter.Add(".png");var file=await picker.PickSingleFileAsync();if(file==null)return;var props=await file.GetBasicPropertiesAsync();if(props.Size>10*1024*1024)throw new IOException("图片不能超过 10 MiB。");using var stream=await file.OpenReadAsync();var decoder=await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);if(decoder.PixelWidth>4096||decoder.PixelHeight>4096)throw new IOException("图片尺寸不能超过 4096 × 4096。");Directory.CreateDirectory(UserSettings.Folder);var target=System.IO.Path.Combine(UserSettings.Folder,"custom-icon-"+Guid.NewGuid().ToString("N")+".png");File.Copy(file.Path,target);var previous=settings.IconPath;settings.IconPath=target;settings.Save();ApplyIcon();preview.Source=BrandImage.Source;if(previous!=null&&previous.StartsWith(UserSettings.Folder,StringComparison.OrdinalIgnoreCase)&&File.Exists(previous))File.Delete(previous);}catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}}));icon.Children.Add(Button("恢复默认",(_,_)=>{settings.IconPath=null;settings.Save();ApplyIcon();preview.Source=BrandImage.Source;}));panel.Children.Add(Card(icon));
-        var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text("作者：王国梁 · MIT 开源许可",14));about.Children.Add(Text("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。",12));panel.Children.Add(Card(about));ShowContent(new ScrollViewer{Content=panel});
+        var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text("MIT 开源许可",14));about.Children.Add(Text("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。",12));panel.Children.Add(Card(about));ShowContent(new ScrollViewer{Content=panel});
     }
     private bool closingApproved;
     private async void OnClosing(AppWindow sender,AppWindowClosingEventArgs args)

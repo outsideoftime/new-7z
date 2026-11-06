@@ -1,5 +1,5 @@
 #ifndef AppVersion
- #define AppVersion "0.1.18"
+ #define AppVersion "0.1.19"
 #endif
 #ifndef BuildId
  #error BuildId is required
@@ -22,7 +22,7 @@
 AppId={#InstallerAppId}
 AppName=New7z
 AppVersion={#AppVersion}
-AppPublisher=王国梁
+AppPublisher=New7z
 AppPublisherURL=https://github.com/outsideoftime/new-7z
 AppVerName=New7z {#AppVersion}
 VersionInfoVersion={#AppVersion}.0

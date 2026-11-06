@@ -73,7 +73,7 @@ try{
  $payloadBytes=[Text.Encoding]::UTF8.GetBytes(($hashes | ConvertTo-Json -Depth 4 -Compress))
  $buildId=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($payloadBytes)).Substring(0,12).ToLowerInvariant()
  if((Test-Path "$payload/onnxruntime.dll") -or (Test-Path "$payload/DirectML.dll")){throw 'Unused AI/ML runtime leaked into the installer.'}
- [pscustomobject]@{Version=$version;Author='王国梁';License='MIT (own code), third-party licenses retained';BuildId=$buildId;Architecture='x64';Trimmed=(!$Untrimmed);Signed=[bool]$SigningCertificateThumbprint;Files=$hashes} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$release/release-manifest.json" -Encoding utf8
+ [pscustomobject]@{Version=$version;Author='New7z';License='MIT (own code), third-party licenses retained';BuildId=$buildId;Architecture='x64';Trimmed=(!$Untrimmed);Signed=[bool]$SigningCertificateThumbprint;Files=$hashes} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$release/release-manifest.json" -Encoding utf8
  Set-Content -LiteralPath "$projectRoot/artifacts/latest-installer-payload.txt" -Value $payload
  & $IsccPath /Q "/DAppVersion=$version" "/DBuildId=$buildId" "/DPayloadDir=$payload" "/DReleaseDir=$release" installer/New7z.iss
  if($LASTEXITCODE){throw 'Installer compilation failed.'}

@@ -1,5 +1,5 @@
 #ifndef AppVersion
- #define AppVersion "0.1.21"
+ #define AppVersion "0.1.22"
 #endif
 #ifndef BuildId
  #error BuildId is required
@@ -50,6 +50,7 @@ SetupLogging=yes
 
 [Languages]
 Name: "chinesesimp"; MessagesFile: "ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "shellmenu"; Description: "添加 New7z 资源管理器右键菜单"; GroupDescription: "系统集成："

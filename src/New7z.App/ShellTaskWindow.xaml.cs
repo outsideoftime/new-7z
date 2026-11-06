@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using New7z.Core;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
+using static New7z.Core.Loc;
 
 namespace New7z.App;
 
@@ -30,7 +32,11 @@ public sealed partial class ShellTaskWindow:Window
     internal ShellTaskWindow(ShellRequest? shellRequest,string? error=null)
     {
         InitializeComponent();request=shellRequest;startupError=error;
-        Title="New7z · 任务";SystemBackdrop=new MicaBackdrop();
+        Heading.Text=T("准备任务","Preparing Task");StatusText.Text=T("正在准备…","Preparing…");
+        AutomationProperties.SetName(Progress,T("任务进度","Task progress"));
+        RetryButton.Content=T("重试","Retry");FolderButton.Content=T("打开文件夹","Open Folder");
+        StartButton.Content=T("开始","Start");CancelButton.Content=T("取消任务","Cancel Task");
+        Title="New7z · "+T("任务","Task");SystemBackdrop=new MicaBackdrop();
         if(AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.SetBorderAndTitleBar(true,false);
@@ -100,11 +106,11 @@ public sealed partial class ShellTaskWindow:Window
     {
         if(loaded)return;loaded=true;Resize(request?.Action is "create" or "extract-to");
         if(startupError!=null){ShowFailure(startupError);return;}
-        if(request==null){ShowFailure("没有可执行的任务。");return;}
+        if(request==null){ShowFailure(T("没有可执行的任务。","There is no task to run."));return;}
         var action=request.Action;
-        Heading.Text=action.StartsWith("create")?"压缩文件":action=="test"?"测试完整性":"解压文件";
+        Heading.Text=action.StartsWith("create")?T("压缩文件","Create Archive"):action=="test"?T("测试完整性","Test Integrity"):T("解压文件","Extract Files");
         Title="New7z · "+Heading.Text;
-        SourceText.Text=request.Paths.Length==1?System.IO.Path.GetFileName(request.Paths[0]):$"已选择 {request.Paths.Length} 个项目";
+        SourceText.Text=request.Paths.Length==1?System.IO.Path.GetFileName(request.Paths[0]):T($"已选择 {request.Paths.Length} 个项目",$"Selected {request.Paths.Length} items");
         ToolTipService.SetToolTip(SourceText,string.Join(Environment.NewLine,request.Paths.Take(20)));
         if(action is "create" or "extract-to"){Configure();return;}
         PrepareTargets();await RunAsync();
@@ -113,18 +119,18 @@ public sealed partial class ShellTaskWindow:Window
     {
         TaskScrollViewer.VerticalAlignment=VerticalAlignment.Top;
         Configuration.Visibility=Visibility.Visible;ProgressSection.Visibility=Visibility.Collapsed;
-        StartButton.Visibility=Visibility.Visible;CancelButton.Content="取消";
-        output=new TextBox{Header=request!.Action=="create"?"保存为":"目标目录",Text=request.Action=="create"?ShellPaths.CreateTarget(request,"7z"):System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
+        StartButton.Visibility=Visibility.Visible;CancelButton.Content=T("取消","Cancel");
+        output=new TextBox{Header=request!.Action=="create"?T("保存为","Save as"):T("目标目录","Target folder"),Text=request.Action=="create"?ShellPaths.CreateTarget(request,"7z"):System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
         if(request.Action=="extract-to"&&request.Paths.Length>1)output.Text=System.IO.Path.GetDirectoryName(request.Paths[0])!;
         Configuration.Children.Add(output);
-        var browse=new Button{Content="选择文件夹"};browse.Click+=Browse_Click;Configuration.Children.Add(browse);
+        var browse=new Button{Content=T("选择文件夹","Choose Folder")};browse.Click+=Browse_Click;Configuration.Children.Add(browse);
         if(request.Action=="create")
         {
-            StartButton.Content="开始压缩";
-            format=new ComboBox{Header="格式",ItemsSource=new[]{"7z","zip"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
-            level=new ComboBox{Header="压缩级别",ItemsSource=new[]{"标准","更快","更小"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
-            secret=new PasswordBox{Header="密码（可选）",PasswordRevealMode=PasswordRevealMode.Peek};
-            encryptNames=new CheckBox{Content="加密文件名（仅 7z）",IsEnabled=false};
+            StartButton.Content=T("开始压缩","Start Compression");
+            format=new ComboBox{Header=T("格式","Format"),ItemsSource=new[]{"7z","zip"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
+            level=new ComboBox{Header=T("压缩级别","Compression Level"),ItemsSource=new[]{T("标准","Standard"),T("更快","Faster"),T("更小","Smaller")},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
+            secret=new PasswordBox{Header=T("密码（可选）","Password (optional)"),PasswordRevealMode=PasswordRevealMode.Peek};
+            encryptNames=new CheckBox{Content=T("加密文件名（仅 7z）","Encrypt file names (7z only)"),IsEnabled=false};
             void UpdateEncryption(){encryptNames.IsEnabled=format.SelectedIndex==0&&secret.Password.Length>0;if(!encryptNames.IsEnabled)encryptNames.IsChecked=false;}
             format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());UpdateEncryption();};
             secret.PasswordChanged+=(_,_)=>UpdateEncryption();
@@ -132,9 +138,9 @@ public sealed partial class ShellTaskWindow:Window
         }
         else
         {
-            StartButton.Content="开始解压";
-            conflict=new ComboBox{Header="遇到同名文件",ItemsSource=new[]{"自动重命名，保留两者","跳过已有文件","替换已有文件"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};Configuration.Children.Add(conflict);
-            Configuration.Children.Add(new TextBlock{Text=request.Paths.Length>1?"每个压缩包解压到独立子文件夹，不删除源文件。":"不删除源压缩包。",TextWrapping=TextWrapping.Wrap});
+            StartButton.Content=T("开始解压","Start Extraction");
+            conflict=new ComboBox{Header=T("遇到同名文件","On Existing Files"),ItemsSource=new[]{T("自动重命名，保留两者","Rename Automatically, Keep Both"),T("跳过已有文件","Skip Existing Files"),T("替换已有文件","Replace Existing Files")},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};Configuration.Children.Add(conflict);
+            Configuration.Children.Add(new TextBlock{Text=request.Paths.Length>1?T("每个压缩包解压到独立子文件夹，不删除源文件。","Each archive is extracted to its own subfolder; source files are kept."):T("不删除源压缩包。","The source archive is kept."),TextWrapping=TextWrapping.Wrap});
         }
         output.Focus(FocusState.Programmatic);Root.DispatcherQueue.TryEnqueue(ResizeToContent);
     }
@@ -146,19 +152,19 @@ public sealed partial class ShellTaskWindow:Window
             var folder=await picker.PickSingleFolderAsync();
             if(folder!=null)output!.Text=request!.Action=="create"?System.IO.Path.Combine(folder.Path,System.IO.Path.GetFileName(output.Text)):folder.Path;
         }
-        catch(Exception ex){ShowMessage("无法选择文件夹",ex.Message,InfoBarSeverity.Error);}
+        catch(Exception ex){ShowMessage(T("无法选择文件夹","Cannot Choose Folder"),ex.Message,InfoBarSeverity.Error);}
     }
     private async void Start_Click(object sender,RoutedEventArgs args)
     {
         if(running||!StartButton.IsEnabled)return;StartButton.IsEnabled=false;
         try
         {
-            if(string.IsNullOrWhiteSpace(output?.Text)||!System.IO.Path.IsPathFullyQualified(output.Text))throw new IOException("请输入完整的目标路径，或选择文件夹。");
-            if(request!.Action=="create"&&(File.Exists(output.Text)||Directory.Exists(output.Text)))throw new IOException("输出名称已存在，请换一个名称。");
-            if(conflict?.SelectedIndex==2&&!await ConfirmAsync("替换同名文件？","目标目录中的同名文件将被替换：\n"+output.Text,"替换并解压"))return;
+            if(string.IsNullOrWhiteSpace(output?.Text)||!System.IO.Path.IsPathFullyQualified(output.Text))throw new IOException(T("请输入完整的目标路径，或选择文件夹。","Enter a full target path, or choose a folder."));
+            if(request!.Action=="create"&&(File.Exists(output.Text)||Directory.Exists(output.Text)))throw new IOException(T("输出名称已存在，请换一个名称。","The output name already exists. Choose another name."));
+            if(conflict?.SelectedIndex==2&&!await ConfirmAsync(T("替换同名文件？","Replace Existing Files?"),T("目标目录中的同名文件将被替换：\n","Files with the same name in the target folder will be replaced:\n")+output.Text,T("替换并解压","Replace and Extract")))return;
             PrepareTargets();await RunAsync();
         }
-        catch(Exception ex){ShowMessage("请检查目标位置",ex.Message,InfoBarSeverity.Error);output?.Focus(FocusState.Programmatic);}
+        catch(Exception ex){ShowMessage(T("请检查目标位置","Check the Target Location"),ex.Message,InfoBarSeverity.Error);output?.Focus(FocusState.Programmatic);}
         finally{StartButton.IsEnabled=true;}
     }
     private void PrepareTargets()
@@ -185,8 +191,8 @@ public sealed partial class ShellTaskWindow:Window
         Configuration.Visibility=Visibility.Collapsed;StartButton.Visibility=Visibility.Collapsed;
         RetryButton.Visibility=Visibility.Collapsed;FolderButton.Visibility=Visibility.Collapsed;Message.IsOpen=false;
         ProgressSection.Visibility=Visibility.Visible;Progress.IsIndeterminate=true;Progress.Value=0;PercentText.Text="";
-        CancelButton.Content="取消任务";CancelButton.IsEnabled=true;
-        DestinationText.Text=(request!.Action=="test"?"位置：":"保存到：")+destination;
+        CancelButton.Content=T("取消任务","Cancel Task");CancelButton.IsEnabled=true;
+        DestinationText.Text=(request!.Action=="test"?T("位置：","Location: "):T("保存到：","Save to: "))+destination;
         Root.DispatcherQueue.TryEnqueue(ResizeToContent);
         bool succeeded=false;
         try
@@ -195,7 +201,7 @@ public sealed partial class ShellTaskWindow:Window
             for(var i=0;i<count;i++)
             {
                 cancellation.Token.ThrowIfCancellationRequested();batchIndex=i;
-                StatusText.Text=(creating?"正在压缩":request.Action=="test"?"正在测试":"正在解压")+(count>1?$" · {i+1}/{count}":"…");
+                StatusText.Text=T((creating?"正在压缩":request.Action=="test"?"正在测试":"正在解压")+(count>1?$" · {i+1}/{count}":"…"),(creating?"Compressing":request.Action=="test"?"Testing":"Extracting")+(count>1?$" · {i+1}/{count}":"…"));
                 if(!creating)SourceText.Text=System.IO.Path.GetFileName(request.Paths[i]);
                 var step=i;
                 var progress=new Progress<EngineProgress>(p=>
@@ -213,16 +219,16 @@ public sealed partial class ShellTaskWindow:Window
                 }
                 else await ProcessArchiveAsync(request.Paths[i],targets[i],progress);
             }
-            Progress.IsIndeterminate=false;Progress.Value=100;PercentText.Text="100%";StatusText.Text="已完成";
-            ShowMessage(request.Action=="test"?"完整性测试通过":creating?"压缩完成":"解压完成",request.Action=="test"?"所选压缩包未发现完整性错误。":"文件已保存到目标位置。",InfoBarSeverity.Success);
+            Progress.IsIndeterminate=false;Progress.Value=100;PercentText.Text="100%";StatusText.Text=T("已完成","Completed");
+            ShowMessage(request.Action=="test"?T("完整性测试通过","Integrity Test Passed"):creating?T("压缩完成","Compression Complete"):T("解压完成","Extraction Complete"),request.Action=="test"?T("所选压缩包未发现完整性错误。","No integrity errors were found in the selected archives."):T("文件已保存到目标位置。","Files were saved to the target location."),InfoBarSeverity.Success);
             succeeded=true;
         }
-        catch(OperationCanceledException){Progress.IsIndeterminate=false;StatusText.Text="已取消";ShowMessage("任务已取消","已完成的输出保留，当前未完成的临时文件已清理。",InfoBarSeverity.Informational);}
+        catch(OperationCanceledException){Progress.IsIndeterminate=false;StatusText.Text=T("已取消","Cancelled");ShowMessage(T("任务已取消","Task Cancelled"),T("已完成的输出保留，当前未完成的临时文件已清理。","Completed output is kept; unfinished temporary files have been cleaned up."),InfoBarSeverity.Informational);}
         catch(Exception ex){ShowFailure(ex.Message);RetryButton.Visibility=Visibility.Visible;}
         finally
         {
             running=false;secret?.SetValue(PasswordBox.PasswordProperty,"");
-            CancelButton.Content="关闭";CancelButton.IsEnabled=true;
+            CancelButton.Content=T("关闭","Close");CancelButton.IsEnabled=true;
             FolderButton.Visibility=destination!=null?Visibility.Visible:Visibility.Collapsed;
             bool autoClose=false;
             try{autoClose=succeeded&&new ExplorerPreferencesStore().Read().AutoCloseOnSuccess;}
@@ -249,15 +255,15 @@ public sealed partial class ShellTaskWindow:Window
             }
             catch(ArchivePasswordException)
             {
-                Progress.IsIndeterminate=true;StatusText.Text="等待输入密码";
-                var password=new PasswordBox{Header="压缩包密码",PasswordRevealMode=PasswordRevealMode.Peek};
+                Progress.IsIndeterminate=true;StatusText.Text=T("等待输入密码","Waiting for password");
+                var password=new PasswordBox{Header=T("压缩包密码","Archive Password"),PasswordRevealMode=PasswordRevealMode.Peek};
                 var content=new StackPanel{Spacing=12};content.Children.Add(new TextBlock{Text=System.IO.Path.GetFileName(source),TextWrapping=TextWrapping.Wrap});content.Children.Add(password);
-                if(key!=null)content.Children.Add(new TextBlock{Text="密码不正确，请重新输入。",TextWrapping=TextWrapping.Wrap});
-                var dialog=CreateDialog("输入密码",content,"继续");
+                if(key!=null)content.Children.Add(new TextBlock{Text=T("密码不正确，请重新输入。","Incorrect password. Try again."),TextWrapping=TextWrapping.Wrap});
+                var dialog=CreateDialog(T("输入密码","Enter Password"),content,T("继续","Continue"));
                 dialog.Opened+=(_,_)=>password.Focus(FocusState.Programmatic);
                 if(await ShowDialogAsync(dialog)!=ContentDialogResult.Primary)throw new OperationCanceledException();
                 key=password.Password;password.Password="";cancellation.Token.ThrowIfCancellationRequested();
-                StatusText.Text=request!.Action=="test"?"正在测试…":"正在解压…";
+                StatusText.Text=request!.Action=="test"?T("正在测试…","Testing…"):T("正在解压…","Extracting…");
             }
         }
     }
@@ -271,10 +277,10 @@ public sealed partial class ShellTaskWindow:Window
     }
     private void ShowFailure(string error)
     {
-        Progress.IsIndeterminate=false;StatusText.Text="未完成";CancelButton.Content="关闭";
-        ShowMessage("任务未完成",error,InfoBarSeverity.Error);
+        Progress.IsIndeterminate=false;StatusText.Text=T("未完成","Not Completed");CancelButton.Content=T("关闭","Close");
+        ShowMessage(T("任务未完成","Task Not Completed"),error,InfoBarSeverity.Error);
     }
-    private ContentDialog CreateDialog(string title,UIElement content,string primary)=>new(){Title=title,Content=content,PrimaryButtonText=primary,CloseButtonText="返回",DefaultButton=ContentDialogButton.Close,XamlRoot=Root.XamlRoot,RequestedTheme=Root.RequestedTheme};
+    private ContentDialog CreateDialog(string title,UIElement content,string primary)=>new(){Title=title,Content=content,PrimaryButtonText=primary,CloseButtonText=T("返回","Back"),DefaultButton=ContentDialogButton.Close,XamlRoot=Root.XamlRoot,RequestedTheme=Root.RequestedTheme};
     private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
     {
         activeDialog=dialog;try{return await dialog.ShowAsync();}finally{activeDialog=null;}
@@ -286,9 +292,9 @@ public sealed partial class ShellTaskWindow:Window
         try
         {
             if(activeDialog!=null){closeWhenDone=exit;activeDialog.Hide();return;}
-            if(!await ConfirmAsync("取消任务？","已完成的输出会保留，当前未完成的临时文件会清理。","取消任务")||windowClosed)return;
+            if(!await ConfirmAsync(T("取消任务？","Cancel Task?"),T("已完成的输出会保留，当前未完成的临时文件会清理。","Completed output will be kept; unfinished temporary files will be cleaned up."),T("取消任务","Cancel Task"))||windowClosed)return;
             if(!running){if(exit)Close();return;}
-            closeWhenDone=exit;cancellation.Cancel();CancelButton.IsEnabled=false;StatusText.Text="正在取消…";
+            closeWhenDone=exit;cancellation.Cancel();CancelButton.IsEnabled=false;StatusText.Text=T("正在取消…","Cancelling…");
         }
         finally{closingDialog=false;}
     }
@@ -310,9 +316,9 @@ public sealed partial class ShellTaskWindow:Window
         {
             var path=destination;
             if(path==null)return;if(!Directory.Exists(path))path=System.IO.Path.GetDirectoryName(path);
-            if(path==null||!Directory.Exists(path))throw new IOException("目标文件夹尚未创建。");
+            if(path==null||!Directory.Exists(path))throw new IOException(T("目标文件夹尚未创建。","The target folder has not been created yet."));
             var info=new ProcessStartInfo("explorer.exe"){UseShellExecute=false};info.ArgumentList.Add(path);Process.Start(info);
         }
-        catch(Exception ex){ShowMessage("无法打开文件夹",ex.Message,InfoBarSeverity.Error);}
+        catch(Exception ex){ShowMessage(T("无法打开文件夹","Cannot Open Folder"),ex.Message,InfoBarSeverity.Error);}
     }
 }

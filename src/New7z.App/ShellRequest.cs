@@ -1,4 +1,5 @@
 using System.Text.Json;
+using static New7z.Core.Loc;
 namespace New7z.App;
 
 internal sealed record ShellRequest(string Action,string[] Paths)
@@ -10,17 +11,17 @@ internal sealed record ShellRequest(string Action,string[] Paths)
         if(!string.Equals(System.IO.Path.GetDirectoryName(full),root,StringComparison.OrdinalIgnoreCase)||
            !Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(full),out _)||
            !string.Equals(System.IO.Path.GetExtension(full),".json",StringComparison.OrdinalIgnoreCase))
-            throw new IOException("无效的右键菜单请求。");
+            throw new IOException(T("无效的右键菜单请求。","Invalid shell menu request."));
         var file=new FileInfo(full);
         if(!file.Exists||file.Length>1024*1024||file.Attributes.HasFlag(FileAttributes.ReparsePoint))
-            throw new IOException("右键菜单请求不存在或超过大小限制。");
+            throw new IOException(T("右键菜单请求不存在或超过大小限制。","The shell menu request is missing or exceeds the size limit."));
         ShellRequest? request;
         try {request=JsonSerializer.Deserialize(await File.ReadAllTextAsync(full),AppJsonContext.Default.ShellRequest);}
         finally {File.Delete(full);}
         if(request?.Paths is not {Length: >0 and <=10000}||request.Paths.Any(p=>string.IsNullOrWhiteSpace(p)||!System.IO.Path.IsPathFullyQualified(p)||!File.Exists(p)&&!Directory.Exists(p)))
-            throw new IOException("选择的文件已移动或不存在。");
+            throw new IOException(T("选择的文件已移动或不存在。","A selected file has moved or no longer exists."));
         if(request.Action is not ("open" or "create" or "create-7z" or "create-zip" or "extract-to" or "extract-named" or "extract-here" or "test"))
-            throw new IOException("不支持的右键菜单命令。");
+            throw new IOException(T("不支持的右键菜单命令。","Unsupported shell menu command."));
         return request;
     }
 }
@@ -44,7 +45,7 @@ internal static class ShellPaths
     public static string CreateTarget(ShellRequest request,string format)
     {
         var first=request.Paths[0];var parent=System.IO.Path.GetDirectoryName(first)!;
-        var name=request.Paths.Length>1?"归档":Directory.Exists(first)?System.IO.Path.GetFileName(first.TrimEnd('\\','/')):System.IO.Path.GetFileNameWithoutExtension(first);
+        var name=request.Paths.Length>1?T("归档","Archive"):Directory.Exists(first)?System.IO.Path.GetFileName(first.TrimEnd('\\','/')):System.IO.Path.GetFileNameWithoutExtension(first);
         return UniqueOutput(System.IO.Path.Combine(parent,name+"."+format));
     }
 }

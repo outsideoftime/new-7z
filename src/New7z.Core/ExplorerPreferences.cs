@@ -29,7 +29,7 @@ public sealed class ExplorerPreferencesStore
     }
     public void Save(ExplorerPreferences value)
     {
-        using var key=hive.CreateSubKey(path,true)??throw new IOException("无法保存资源管理器设置。");
+        using var key=hive.CreateSubKey(path,true)??throw new IOException(Loc.T("无法保存资源管理器设置。", "Could not save Explorer settings."));
         key.SetValue("Commands",(int)value.Commands&255,RegistryValueKind.DWord);
         key.SetValue("AutoCloseOnSuccess",value.AutoCloseOnSuccess?1:0,RegistryValueKind.DWord);
         key.SetValue("MenuEnabled",value.MenuEnabled?1:0,RegistryValueKind.DWord);
@@ -68,7 +68,7 @@ public sealed class WindowsCompressMenuSettingsStore
     {
         var preferences=new ExplorerPreferencesStore(hive,preferencesPath);
         var current=preferences.Read();
-        using var settings=hive.CreateSubKey(preferencesPath,true)??throw new IOException("无法保存 Windows 压缩菜单设置。");
+        using var settings=hive.CreateSubKey(preferencesPath,true)??throw new IOException(Loc.T("无法保存 Windows 压缩菜单设置。", "Could not save the Windows compression menu setting."));
         var hasBackup=settings.GetSubKeyNames().Any(name=>string.Equals(name,BackupKeyName,StringComparison.OrdinalIgnoreCase));
 
         if(!hidden)
@@ -77,7 +77,7 @@ public sealed class WindowsCompressMenuSettingsStore
             {
                 // The backup was lost; only a marker this application wrote may be removed,
                 // otherwise a foreign block entry could be destroyed.
-                if(!RemoveOwnMarker())throw new IOException("Windows 菜单的恢复信息缺失，且当前屏蔽项不是 New7z 写入的；为避免覆盖其他注册表设置，New7z 未修改该项。");
+                if(!RemoveOwnMarker())throw new IOException(Loc.T("Windows 菜单的恢复信息缺失，且当前屏蔽项不是 New7z 写入的；为避免覆盖其他注册表设置，New7z 未修改该项。", "Restore information for the Windows menu is missing and the current block entry was not written by New7z; New7z left it unchanged to avoid overwriting other registry settings."));
                 preferences.Save(current with{HideWindowsCompressMenu=false});
                 NotifyExplorer();
                 return true;
@@ -92,10 +92,10 @@ public sealed class WindowsCompressMenuSettingsStore
         if(current.HideWindowsCompressMenu&&hasBackup)return true;
         // Without a backup the previous value is unknown; re-hiding would record the current
         // marker as the original value and make a later restore keep the menu hidden.
-        if(!hasBackup&&current.HideWindowsCompressMenu)throw new IOException("Windows 菜单的恢复信息缺失；为避免覆盖其他注册表设置，New7z 未修改该项。");
+        if(!hasBackup&&current.HideWindowsCompressMenu)throw new IOException(Loc.T("Windows 菜单的恢复信息缺失；为避免覆盖其他注册表设置，New7z 未修改该项。", "Restore information for the Windows menu is missing; New7z left the entry unchanged to avoid overwriting other registry settings."));
         if(hasBackup)RestorePreviousValue(settings); // Recover an interrupted earlier update.
 
-        using var blocked=hive.CreateSubKey(blockedPath,true)??throw new IOException("无法写入当前用户的 Windows Shell 设置。");
+        using var blocked=hive.CreateSubKey(blockedPath,true)??throw new IOException(Loc.T("无法写入当前用户的 Windows Shell 设置。", "Could not write the current user's Windows Shell settings."));
         var existingName=blocked.GetValueNames().FirstOrDefault(name=>string.Equals(name,CompressToClsid,StringComparison.OrdinalIgnoreCase));
         var hadPreviousValue=existingName is not null;
         object? previousValue=null;
@@ -107,7 +107,7 @@ public sealed class WindowsCompressMenuSettingsStore
         }
 
         var marker=MarkerPrefix+Guid.NewGuid().ToString("N");
-        using(var backup=settings.CreateSubKey(BackupKeyName,true)??throw new IOException("无法备份 Windows Shell 设置。"))
+        using(var backup=settings.CreateSubKey(BackupKeyName,true)??throw new IOException(Loc.T("无法备份 Windows Shell 设置。", "Could not back up the Windows Shell settings.")))
         {
             backup.SetValue(HadPreviousValueName,hadPreviousValue?1:0,RegistryValueKind.DWord);
             backup.SetValue(MarkerName,marker,RegistryValueKind.String);

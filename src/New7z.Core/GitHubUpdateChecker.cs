@@ -37,7 +37,7 @@ public static class GitHubUpdateChecker
             try{return await CheckFeedAsync(current,cancellation);}
             catch(Exception fallback) when(fallback is HttpRequestException or IOException or System.Xml.XmlException)
             {
-                throw new IOException("无法读取 GitHub 发布信息，请检查网络后重试。",ex);
+                throw new IOException(Loc.T("无法读取 GitHub 发布信息，请检查网络后重试。", "Could not read GitHub release information. Check your network and try again."),ex);
             }
         }
     }
@@ -78,7 +78,7 @@ public static class GitHubUpdateChecker
     private static async Task<UpdateInfo?> CheckApiAsync(Version current,CancellationToken cancellation)
     {
         using var response=await Client.GetAsync(LatestReleaseApi,cancellation);
-        if(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests)throw new IOException("GitHub 更新接口暂时受限，请稍后再检查更新。");
+        if(response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests)throw new IOException(Loc.T("GitHub 更新接口暂时受限，请稍后再检查更新。", "The GitHub update API is temporarily rate-limited. Try checking for updates later."));
         response.EnsureSuccessStatusCode();
         await using var stream=await response.Content.ReadAsStreamAsync(cancellation);
         using var document=await JsonDocument.ParseAsync(stream,cancellationToken:cancellation);
@@ -118,7 +118,7 @@ public static class GitHubUpdateChecker
             done+=read;
             if(total>0)progress?.Report(Math.Clamp(done*100.0/total.Value,0,100));
         }
-        if(total>0&&done!=total)throw new IOException("更新包下载不完整。");
+        if(total>0&&done!=total)throw new IOException(Loc.T("更新包下载不完整。", "The update download is incomplete."));
     }
     public static async Task<bool> VerifyChecksumAsync(UpdateInfo update,string file,CancellationToken cancellation=default)
     {

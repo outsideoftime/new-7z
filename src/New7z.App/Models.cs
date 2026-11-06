@@ -17,17 +17,20 @@ public sealed class ArchiveJob(string title,string destination):INotifyPropertyC
     public string Title {get;}=title;
     public string Destination {get;}=destination;
     public CancellationTokenSource Cancellation {get;}=new();
-    private string status="等待中";
+    private string status="";
     private double percent;
+    private bool active=true;
     public string Status {get=>status;set{status=value;Changed();Changed(nameof(CanCancel));}}
     public double Percent {get=>percent;set{percent=value;Changed();}}
-    public bool CanCancel=>Status is "等待中" or "正在处理";
+    public bool Active {get=>active;set{active=value;Changed();Changed(nameof(CanCancel));}}
+    public bool CanCancel=>active;
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed([CallerMemberName]string? name=null)=>PropertyChanged?.Invoke(this,new(name));
 }
 public sealed class UserSettings
 {
-    public string Theme {get;set;}="系统";
+    public string Theme {get;set;}="system";
+    public string Language {get;set;}="system";
     public string? IconPath {get;set;}
     public bool AutoCheckUpdates {get;set;}=true;
     public List<string> Recent {get;set;}=[];

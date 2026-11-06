@@ -38,7 +38,7 @@ public sealed record ArchiveEntry
     public string Name => NormalizedPath.Split('/').Last();
     public string Directory => NormalizedPath.Contains('/') ? NormalizedPath[..NormalizedPath.LastIndexOf('/')] : "";
     public string Extension => System.IO.Path.GetExtension(Name).ToLowerInvariant();
-    public string SizeText => IsDirectory ? "文件夹" : ByteSize.Format(Size);
+    public string SizeText => IsDirectory ? Loc.T("文件夹", "Folder") : ByteSize.Format(Size);
     public string PackedSizeText => PackedSize is { } n ? ByteSize.Format(n) : "—";
     public string ModifiedText => FileTime > 0 ? DateTime.FromFileTimeUtc(FileTime).ToLocalTime().ToString("yyyy/MM/dd HH:mm") : "—";
     public bool IsImage => ImageExtensions.Contains(Extension);
@@ -55,4 +55,4 @@ public static class ByteSize
     };
 }
 public sealed record EngineProgress(ulong Total, ulong Completed);
-public sealed class ArchivePasswordException() : Exception("压缩包需要密码，或密码不正确。请重新输入。");
+public sealed class ArchivePasswordException() : Exception(Loc.T("压缩包需要密码，或密码不正确。请重新输入。", "The archive requires a password, or the password is incorrect. Please enter it again."));

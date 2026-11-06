@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Text;
 
 namespace New7z.Core;
+using static New7z.Core.Loc;
 
 // Fast, standard UTF-8 ZIP for unencrypted speed/balanced profiles. 7-Zip remains
 // the reader and the writer for encrypted ZIP, size-priority ZIP and all 7z files.
@@ -34,7 +35,7 @@ internal static class FastZipWriter
                 {
                     cancellation.ThrowIfCancellationRequested();
                     var attributes=File.GetAttributes(paths[i]);
-                    if(attributes.HasFlag(FileAttributes.ReparsePoint))throw new IOException("暂不打包符号链接或重解析点。");
+                    if(attributes.HasFlag(FileAttributes.ReparsePoint))throw new IOException(T("暂不打包符号链接或重解析点。","Symbolic links and reparse points are not packaged yet."));
                     var directory=attributes.HasFlag(FileAttributes.Directory);
                     var entry=zip.CreateEntry(names[i].TrimEnd('/')+(directory?"/":""),compression);
                     var time=File.GetLastWriteTime(paths[i]);

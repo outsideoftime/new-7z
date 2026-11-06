@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using New7z.Core;
 namespace New7z.App;
 public partial class App:Application
 {
@@ -7,6 +8,7 @@ public partial class App:Application
     public App(){InitializeComponent();UnhandledException+=(_,e)=>{try{var folder=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"New7z");Directory.CreateDirectory(folder);System.IO.File.AppendAllText(System.IO.Path.Combine(folder,"error.log"),DateTimeOffset.Now.ToString("o")+" "+e.Exception+Environment.NewLine);}catch{}};}
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        Loc.Language=Loc.Resolve(UserSettings.Load().Language);
         var command=Environment.GetCommandLineArgs().Skip(1).ToArray();
         if(command.Length==2&&command[0]=="--shell-request")
         {

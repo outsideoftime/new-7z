@@ -166,7 +166,13 @@ try{
  $RuntimeDirectory=[IO.Path]::GetFullPath($RuntimeDirectory)
  if((!(Owned-Path $RuntimeDirectory) -and $RuntimeDirectory -ne $InstallRoot) -or !(Test-Path -LiteralPath "$RuntimeDirectory/New7z.App.exe")){throw 'Invalid application runtime directory.'}
  if($Action -eq 'Associate'){Register-Associations;Notify-Explorer;exit 0}
- if($Action -eq 'Repair'){Remove-Classic;Register-Classic;Notify-Explorer;exit 0}
+ if($Action -eq 'Repair'){
+  $modernRegistered=$null
+  try{$modernRegistered=Get-AppxPackage -Name 'New7z.ContextMenu' | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1}catch{}
+  Remove-Classic
+  if(!$modernRegistered){Register-Classic}
+  Notify-Explorer;exit 0
+ }
  $mode='disabled';$modernError=$null
  Remove-Classic
  if($EnableMenu -eq '1'){
@@ -186,15 +192,14 @@ try{
   if($mode -ne 'modern'){
    # Do not block the modern Explorer COM class or modify Windows' own compression commands.
    Remove-Modern $true
+   Register-Classic
    $mode='classic'
   }
-  Register-Classic
-  if($mode -eq 'modern'){$mode='modern+classic'}
  }else{Remove-Modern $true}
  $packageFullName=$null
  if($EnableAssociations -eq '1'){Register-Associations}else{Remove-Associations;Remove-OpenWith}
  Notify-Explorer
- if($mode -eq 'modern+classic'){$packageFullName=(Get-AppxPackage -Name New7z.ContextMenu | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1).PackageFullName}
+ if($mode -eq 'modern'){$packageFullName=(Get-AppxPackage -Name New7z.ContextMenu | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1).PackageFullName}
  $stateVersion=$null
  if($RuntimeDirectory){$stateVersion=(Split-Path $RuntimeDirectory -Leaf).Split('-')[0]}
  if(!$stateVersion -and (Test-Path -LiteralPath $statePath)){$stateVersion=((Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).Version)}

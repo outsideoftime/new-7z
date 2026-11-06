@@ -65,14 +65,19 @@ try{
  Run-Setup '' 'install-modern.log'
  $state=Get-Content -LiteralPath "$install/installation.json" -Raw | ConvertFrom-Json
  Check ($state.Version -eq $manifest.Version) 'installation state records the installed version'
- Check ($state.MenuMode -in @('modern+classic','classic')) 'compatible menu always registered'
+ Check ($state.MenuMode -in @('modern','classic')) 'menu mode recorded'
  $runtime=$state.RuntimeDirectory
  Check ($runtime.StartsWith($install+'\',[StringComparison]::OrdinalIgnoreCase)) 'runtime is inside selected directory'
  foreach($file in @('New7z.App.exe','New7z.Core.dll','resources.pri','MainWindow.xbf','ShellTaskWindow.xbf','7z.dll','New7z.Native.dll','New7z.Shell.dll','Assets/New7z.ico','Licenses/Source/7z2605-src.7z','Licenses/New7z-MIT.txt','Installer/Integrate-Shell.ps1')){Check (Test-Path -LiteralPath (Join-Path $runtime $file)) "installed $file"}
- $server=Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/Classes/CLSID/{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}/InprocServer32' -Name '(default)'
- Check ($server -eq "$runtime\New7z.Shell.dll") 'compatible COM uses separate class and installed DLL'
- & "$projectRoot/artifacts/native/x64/ShellPreferences.Tests.exe" --registered $server
- Check ($LASTEXITCODE -eq 0) 'installed COM activation and icon resource'
+ if($state.MenuMode -eq 'modern'){
+  Check (!(Test-Path -LiteralPath 'HKCU:/Software/Classes/Directory/shell/New7z')) 'modern menu does not add a duplicate classic entry'
+  Check (!(Test-Path -LiteralPath 'HKCU:/Software/Classes/CLSID/{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}')) 'modern menu does not register the classic COM class'
+ } else {
+  $server=Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/Classes/CLSID/{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}/InprocServer32' -Name '(default)'
+  Check ($server -eq "$runtime\New7z.Shell.dll") 'compatible COM uses separate class and installed DLL'
+  & "$projectRoot/artifacts/native/x64/ShellPreferences.Tests.exe" --registered $server
+  Check ($LASTEXITCODE -eq 0) 'installed COM activation and icon resource'
+ }
  Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/RegisteredApplications' -Name New7z) -eq 'Software\New7z\Capabilities') 'Windows Default Apps registration'
  Check ((Get-ItemPropertyValue -LiteralPath 'HKCU:/Software/Classes/New7z.7z/shell/open/command' -Name '(default)') -eq ('"'+$runtime+'\New7z.App.exe" "%1"')) 'archive open command quotes Unicode and space paths'
  foreach($extension in @('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso')){
@@ -82,9 +87,18 @@ try{
   Check ((Get-ItemPropertyValue -LiteralPath "HKCU:/Software/Classes/New7z$extension/DefaultIcon" -Name '(default)') -eq "$runtime\Assets\Formats\$($extension.Substring(1)).ico") "format icon $extension"
  }
  $repairScript="$runtime/Installer/Integrate-Shell.ps1"
- $registry.DeleteSubKeyTree('Software\Classes\Directory\shell\New7z',$false)
- & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $repairScript -Action Repair -InstallRoot $install -RuntimeDirectory $runtime
- Check ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath 'HKCU:/Software/Classes/Directory/shell/New7z')) 'settings repair restores missing folder menu'
+ if($state.MenuMode -eq 'modern'){
+  $legacyClass=$registry.CreateSubKey('Software\Classes\CLSID\{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}\InprocServer32')
+  try{$legacyClass.SetValue('',"$install\legacy\New7z.Shell.dll")}finally{$legacyClass.Dispose()}
+  $legacyMenu=$registry.CreateSubKey('Software\Classes\Directory\shell\New7z')
+  try{$legacyMenu.SetValue('ExplorerCommandHandler','{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}')}finally{$legacyMenu.Dispose()}
+  & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $repairScript -Action Repair -InstallRoot $install -RuntimeDirectory $runtime
+  Check ($LASTEXITCODE -eq 0 -and !(Test-Path -LiteralPath 'HKCU:/Software/Classes/Directory/shell/New7z') -and !(Test-Path -LiteralPath 'HKCU:/Software/Classes/CLSID/{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}')) 'settings repair removes the duplicate classic menu in modern mode'
+ } else {
+  $registry.DeleteSubKeyTree('Software\Classes\Directory\shell\New7z',$false)
+  & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $repairScript -Action Repair -InstallRoot $install -RuntimeDirectory $runtime
+  Check ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath 'HKCU:/Software/Classes/Directory/shell/New7z')) 'settings repair restores missing folder menu'
+ }
  $registry.DeleteSubKeyTree('Software\New7z\Capabilities',$false)
  & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $repairScript -Action Associate -InstallRoot $install -RuntimeDirectory $runtime
  Check ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath 'HKCU:/Software/New7z/Capabilities/FileAssociations')) 'settings repair restores Default Apps capabilities'

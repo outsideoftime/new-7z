@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前预览版：**0.1.19**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前预览版：**0.1.20**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
@@ -19,7 +19,7 @@
 - 默认注册到 Windows「默认应用」及 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 的「打开方式」；设置 → 文件关联 → **选择默认应用**，由用户选择默认格式。
 - 应用支持浅色、深色、跟随系统，以及应用内 PNG 图标替换。
 
-勾选菜单任务后，始终提供 **右键 → 显示更多选项 → New7z** 兼容入口；系统具备受信任身份包或现有开发注册条件时，同时注册 Windows 11 现代菜单。不会自动开启开发者模式、导入证书、隐藏 Windows 自带压缩菜单或强制覆盖默认应用。
+勾选菜单任务后，资源管理器右键会出现 **New7z** 子菜单：系统具备受信任身份包或现有开发注册条件时使用 Windows 11 现代菜单，否则退回兼容菜单。两种模式只注册一种，不会重复显示。不会自动开启开发者模式、导入证书、隐藏 Windows 自带压缩菜单或强制覆盖默认应用。
 
 普通未加密 ZIP 的标准/更快模式使用流式 ZIP 编码；体积优先、密码 ZIP 和全部 7z 使用 7-Zip。读取、预览、解压仍使用 7-Zip。详见 [ZIP 性能记录](docs/ZIP性能优化.md)。
 

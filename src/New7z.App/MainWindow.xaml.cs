@@ -210,7 +210,7 @@ public sealed partial class MainWindow:Window
         fileList.DoubleTapped+=async(_,e)=>{
             var elements=VisualTreeHelper.FindElementsInHostCoordinates(e.GetPosition(null),fileList).ToList();
             if(elements.Any(x=>x is CheckBox))return;
-            if(elements.OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault() is { } row)await ActivateRowAsync(row.Entry);
+            if(elements.OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault() is { } row){e.Handled=true;await ActivateRowAsync(row.Entry);}
         };fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}else if(e.Key==VirtualKey.Delete){e.Handled=true;await DeleteSelectedAsync();}else if(e.Key==VirtualKey.A&&IsControlDown()){e.Handled=true;SelectAllRows();}};
         // Custom drag gesture: ListView's built-in item drag raises DragStarting on the item
         // without a usable deferral, so the files must be prepared before StartDragAsync.

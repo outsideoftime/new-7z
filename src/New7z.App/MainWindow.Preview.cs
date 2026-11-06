@@ -124,11 +124,13 @@ public sealed partial class MainWindow
         previewWindow.AppWindow.MoveAndResize(new RectInt32(area.X+(area.Width-width)/2,area.Y+(area.Height-height)/2,width,height));
         var closed=new TaskCompletionSource();
         previewWindow.Closed+=(_,_)=>closed.TrySetResult();
-        previewWindow.Activate();
-        try{previewWindow.AppWindow.MoveInZOrderAtTop();}catch{}
         var previewHwnd=WinRT.Interop.WindowNative.GetWindowHandle(previewWindow);
-        SetForegroundWindow(previewHwnd);
-        previewWindow.DispatcherQueue.TryEnqueue(()=>{previewWindow.Activate();SetForegroundWindow(previewHwnd);});
+        void BringToFront(){try{previewWindow.Activate();previewWindow.AppWindow.MoveInZOrderAtTop();SetForegroundWindow(previewHwnd);}catch{}}
+        BringToFront();
+        // A double-click finishes its second click on the main window after this handler; repeat
+        // briefly so the preview is not pushed behind it again.
+        previewWindow.DispatcherQueue.TryEnqueue(BringToFront);
+        _=Task.Run(async()=>{foreach(var delay in new[]{150,350,700}){await Task.Delay(delay);if(closed.Task.IsCompleted)return;previewWindow.DispatcherQueue.TryEnqueue(BringToFront);}});
 
         Image? image=null;BitmapImage? bitmap=null;
         void RenderText()

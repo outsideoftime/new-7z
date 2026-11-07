@@ -38,7 +38,7 @@ pwsh -File scripts/build-msix.ps1 -RequireStoreIdentity
 - **包**：上传 `.msixupload`
 - **商店列表**：截图（仓库 `docs/app-screenshots` 可直接使用）、描述、分类（实用程序）
 - **系统要求**：Windows 11 x64（包清单里 MinVersion 已限定 10.0.22000）
-- **年龄分级**、**隐私政策**：Store 版本不联网收集数据，可提供仓库说明页作为链接
+- **年龄分级**、**隐私政策**：使用仓库中的 [PRIVACY.md](../PRIVACY.md)，页面地址为 `https://github.com/outsideoftime/new-7z/blob/main/PRIVACY.md`；也可以在提交表单中选择「提供隐私策略文本」直接粘贴正文
 - **定价**：免费
 
 认证一般 1～3 个工作日。通过后微软会重新签名，无需自备代码签名证书。

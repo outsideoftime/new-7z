@@ -204,7 +204,17 @@ public sealed partial class MainWindow:Window
         searchBox=new TextBox{PlaceholderText=T("搜索当前目录","Search this folder"),Text=query};Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(searchBox,T("搜索当前目录","Search this folder"));searchBox.TextChanged+=(_,_)=>{query=searchBox.Text;RefreshRows();};Grid.SetColumn(searchBox,3);pathbar.Children.Add(searchBox);
         var selectAll=Button(T("全选","Select all"),(_,_)=>SelectAllRows());ToolTipService.SetToolTip(selectAll,T("选中当前目录的所有条目（Ctrl+A）","Select every item in this folder (Ctrl+A)"));Grid.SetColumn(selectAll,2);pathbar.Children.Add(selectAll);Grid.SetRow(pathbar,2);grid.Children.Add(pathbar);
         var table=new Grid();table.RowDefinitions.Add(new(){Height=GridLength.Auto});table.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
-        var header=Text(T("       名称                                                     大小                 压缩后               修改时间","       Name                                                       Size              Packed            Modified"),12);header.Margin=new Thickness(12,10,12,10);header.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];table.Children.Add(header);
+        // Column-for-column copy of the row template, with a leading spacer for the
+        // selection checkbox column that the ListView item container renders.
+        var header=new Grid{ColumnSpacing=12,Margin=new Thickness(16,10,16,10)};
+        foreach(var width in new GridLength[]{new(21),new(26),new(1,GridUnitType.Star),new(100),new(100),new(145)})header.ColumnDefinitions.Add(new(){Width=width});
+        void AddHeader(string text,int column)
+        {
+            var label=Text(text,12);label.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+            Grid.SetColumn(label,column);header.Children.Add(label);
+        }
+        AddHeader(T("名称","Name"),2);AddHeader(T("大小","Size"),3);AddHeader(T("压缩后","Packed"),4);AddHeader(T("修改时间","Modified"),5);
+        table.Children.Add(header);
         fileList=new ListView{SelectionMode=ListViewSelectionMode.Multiple,IsMultiSelectCheckBoxEnabled=true,HorizontalContentAlignment=HorizontalAlignment.Stretch};
         fileList.ItemTemplate=(DataTemplate)XamlReader.Load("""
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><Grid MinHeight="48" ColumnSpacing="12" Padding="4,5"><Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/><ColumnDefinition Width="100"/><ColumnDefinition Width="145"/></Grid.ColumnDefinitions><FontIcon Glyph="{Binding Glyph}" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding Name}" ToolTipService.ToolTip="{Binding FullPath}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/><TextBlock Grid.Column="2" Text="{Binding SizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="3" Text="{Binding PackedSizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="4" Text="{Binding ModifiedText}" VerticalAlignment="Center" FontSize="12"/></Grid></DataTemplate>

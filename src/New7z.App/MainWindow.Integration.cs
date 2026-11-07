@@ -20,6 +20,19 @@ public sealed partial class MainWindow
         await process.WaitForExitAsync();
         if(process.ExitCode!=0)throw new IOException(T("注册未完成。请查看安装目录中的 integration-error.txt。","Registration did not complete. See integration-error.txt in the install folder."));
     }
+    private void AddPackagedAssociationSettings(StackPanel panel)
+    {
+        var card=Stack(14);
+        card.Children.Add(Text(T("文件关联","File associations"),18,true));
+        card.Children.Add(Text(T("Microsoft Store 版本在安装包里声明了 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 的关联，它们会自动出现在「打开方式」列表中。","The Microsoft Store build declares associations for 7z, ZIP, RAR, TAR, GZ, XZ, BZ2 and ISO in its package, so they appear in the \"Open with\" list automatically."),12));
+        card.Children.Add(Button(T("选择默认应用","Choose default apps"),(_,_)=>
+        {
+            try{Process.Start(new ProcessStartInfo("ms-settings:defaultapps"){UseShellExecute=true});}
+            catch(Exception ex){Notify(T("无法打开 Windows 设置：","Cannot open Windows Settings: ")+ex.Message,InfoBarSeverity.Error);}
+        },true));
+        card.Children.Add(Text(T("默认程序由你在 Windows 设置中确认，不会强制替换现有选择。","You confirm default apps in Windows Settings; New7z never forces a replacement."),12));
+        panel.Children.Add(Card(card));
+    }
     private void AddAssociationSettings(StackPanel panel)
     {
         var card=Stack(14);card.Children.Add(Text(T("文件关联","File associations"),18,true));

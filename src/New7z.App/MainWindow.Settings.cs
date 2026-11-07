@@ -24,7 +24,7 @@ public sealed partial class MainWindow
             var box=new CheckBox{Content=label,IsChecked=saved.Commands.HasFlag(flag)};commands.Children.Add(box);choices.Add((flag,box));
         }
         var save=Button(T("应用菜单设置","Apply menu settings"),(_,_)=>{} ,true);section.Children.Add(save);
-        var repair=Button(T("修复右键菜单注册","Repair menu registration"),(_,_)=>{});section.Children.Add(repair);
+        var repair=Button(T("修复右键菜单注册","Repair menu registration"),(_,_)=>{});if(!AppEnvironment.IsPackaged)section.Children.Add(repair);
         var feedback=new InfoBar{IsOpen=false,IsClosable=false};section.Children.Add(feedback);
         var popup=Stack(14);popup.Children.Add(Text(T("任务弹出窗口","Task popup window"),18,true));
         var closeMode=new ComboBox{Header=T("任务成功后","After a successful task"),ItemsSource=new[]{T("手动关闭（默认）","Close manually (default)"),T("自动关闭","Close automatically")},SelectedIndex=saved.AutoCloseOnSuccess?1:0,HorizontalAlignment=HorizontalAlignment.Stretch};popup.Children.Add(closeMode);
@@ -112,6 +112,6 @@ public sealed partial class MainWindow
             finally{changingSystemMenu=false;hideSystemMenu.IsEnabled=true;systemFeedback.IsOpen=true;}
         };
         panel.Children.Add(Card(system));
-        AddAssociationSettings(panel);
+        if(AppEnvironment.IsPackaged)AddPackagedAssociationSettings(panel);else AddAssociationSettings(panel);
     }
 }

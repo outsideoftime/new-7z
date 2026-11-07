@@ -64,7 +64,7 @@ public sealed partial class MainWindow:Window
             var launchArgs=Environment.GetCommandLineArgs().Skip(1).ToArray();
             if(launchArgs.Length==3&&launchArgs[0]=="--verify-ui"){await VerifyUiAsync(launchArgs[1],launchArgs[2]);return;}
             var arg=startupArchive??launchArgs.FirstOrDefault(File.Exists);if(arg!=null)await OpenArchiveAsync(arg);
-            if(settings.AutoCheckUpdates)_=CheckForUpdatesAsync(false);
+            if(settings.AutoCheckUpdates&&!AppEnvironment.IsPackaged)_=CheckForUpdatesAsync(false);
         };
     }
     private void ApplyLanguage()

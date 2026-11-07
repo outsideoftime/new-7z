@@ -12,6 +12,15 @@ public sealed partial class MainWindow
     private static Version AppVersion=>typeof(App).Assembly.GetName().Version??new Version(0,1,0);
     private void AddUpdateSettings(StackPanel panel)
     {
+        if(AppEnvironment.IsPackaged)
+        {
+            var store=Stack(12);
+            store.Children.Add(Text(T("应用更新","App updates"),18,true));
+            store.Children.Add(Text(T($"当前版本 {AppVersion.ToString(3)} · Microsoft Store 版本由 Store 负责更新，不检查 GitHub Releases。",$"Current version {AppVersion.ToString(3)} · The Microsoft Store build is updated by the Store and does not check GitHub Releases."),12));
+            store.Children.Add(Button(T("打开 Microsoft Store 更新页","Open Microsoft Store updates"),(_,_)=>{try{Process.Start(new ProcessStartInfo("ms-windows-store://downloadsandupdates"){UseShellExecute=true});}catch{}},true));
+            panel.Children.Add(Card(store));
+            return;
+        }
         var section=Stack(12);
         section.Children.Add(Text(T("应用更新","App updates"),18,true));
         section.Children.Add(Text(T($"当前版本 {AppVersion.ToString(3)} · 从 GitHub Releases 检查最新版本，下载后校验 SHA-256 再安装。",$"Current version {AppVersion.ToString(3)} · checks GitHub Releases, verifies SHA-256, then installs."),12));
@@ -23,6 +32,7 @@ public sealed partial class MainWindow
     }
     private async Task CheckForUpdatesAsync(bool interactive)
     {
+        if(AppEnvironment.IsPackaged)return;
         if(updateBusy)return;
         updateBusy=true;
         try

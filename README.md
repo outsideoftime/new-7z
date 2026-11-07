@@ -80,6 +80,8 @@ New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zi
 ./scripts/get-build-tools.ps1
 # 精简自包含安装包，输出 artifacts/releases
 ./scripts/build-installer.ps1
+# Microsoft Store 上传包，输出 artifacts/msix（需先填入 Partner Center 标识）
+./scripts/build-msix.ps1 -RequireStoreIdentity
 ```
 
 发行构建采用 WinUI 组件依赖与部分托管裁剪，保留自有程序集和 JSON 源生成上下文；可用 `-Untrimmed` 构建未裁剪对照版。当前两个 Windows SDK/WinRT 第三方程序集会报告 IL2104 裁剪警告，已验证发布版设置、XAML 文件名绑定、文本/图片读取及快捷任务；更多环境仍需验证。

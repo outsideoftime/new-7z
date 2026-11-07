@@ -8,11 +8,13 @@ Store 版本以 MSIX 形式提交，构建入口是 `scripts/build-msix.ps1`，�
 2. 新建产品时选择 **MSIX or PWA app**，预留应用名称。
 3. 打开该产品的 **Product identity** 页面，复制以下三项：
 
-| Partner Center 字段 | 写入位置 |
-|---|---|
-| Package/Identity/Name | `Package.appxmanifest` 的 `<Identity Name="...">` |
-| Package/Identity/Publisher | `<Identity Publisher="...">`（形如 `CN=xxxxxxxx-...`） |
-| Package/Properties/PublisherDisplayName | `<Properties><PublisherDisplayName>` |
+| Partner Center 字段 | 当前值 | 写入位置 |
+|---|---|---|
+| Package/Identity/Name | `B8EC7EE8.New7z` | `Package.appxmanifest` 的 `<Identity Name="...">` |
+| Package/Identity/Publisher | `CN=7C74DB3A-AD98-46DA-A414-D5D981956821` | `<Identity Publisher="...">` |
+| Package/Properties/PublisherDisplayName | `王国梁` | `<Properties><PublisherDisplayName>` |
+
+包族名（PFN）：`B8EC7EE8.New7z_2n9mjq0a4yk0`；Store ID：`9N9T8LX28P3V`。
 
 `Version` 不需要手改：构建脚本会从 `Directory.Build.props` 读取并写入清单，构建结束后还原。
 

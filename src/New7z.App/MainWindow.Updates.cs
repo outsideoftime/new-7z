@@ -17,7 +17,7 @@ public sealed partial class MainWindow
             var store=Stack(12);
             store.Children.Add(Text(T("应用更新","App updates"),18,true));
             store.Children.Add(Text(T($"当前版本 {AppVersion.ToString(3)} · Microsoft Store 版本由 Store 负责更新，不检查 GitHub Releases。",$"Current version {AppVersion.ToString(3)} · The Microsoft Store build is updated by the Store and does not check GitHub Releases."),12));
-            store.Children.Add(Button(T("打开 Microsoft Store 更新页","Open Microsoft Store updates"),(_,_)=>{try{Process.Start(new ProcessStartInfo("ms-windows-store://downloadsandupdates"){UseShellExecute=true});}catch{}},true));
+            store.Children.Add(Button(T("打开 Microsoft Store 页面","Open the Microsoft Store page"),(_,_)=>{try{Process.Start(new ProcessStartInfo("ms-windows-store://pdp/?productid=9N9T8LX28P3V"){UseShellExecute=true});}catch{}},true));
             panel.Children.Add(Card(store));
             return;
         }

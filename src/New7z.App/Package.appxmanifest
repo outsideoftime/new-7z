@@ -11,17 +11,16 @@
 
   <!--
     Identity values come from Partner Center (App management > Product identity).
-    Replace Name, Publisher and PublisherDisplayName with the exact values shown there
-    before producing a Store upload package.
+    Keep them in sync with the reserved product; they determine the package family.
   -->
-  <Identity Name="New7z.New7z"
-            Publisher="CN=00000000-0000-0000-0000-000000000000"
+  <Identity Name="B8EC7EE8.New7z"
+            Publisher="CN=7C74DB3A-AD98-46DA-A414-D5D981956821"
             Version="0.1.24.0"
             ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>New7z</DisplayName>
-    <PublisherDisplayName>New7z</PublisherDisplayName>
+    <PublisherDisplayName>王国梁</PublisherDisplayName>
     <Logo>Assets\Store\StoreLogo.png</Logo>
 
     <!--
@@ -132,4 +131,5 @@
     <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 </Package>
+
 

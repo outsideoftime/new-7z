@@ -45,6 +45,7 @@ public sealed partial class MainWindow:Window
     private static SolidColorBrush Secondary=>new(Colors.Gray);
     private static readonly string[] ThemeCodes=["system","light","dark"];
     private static readonly string[] LanguageCodes=["system","zh","en"];
+    private static readonly string[] FormatNames=["7z","zip","rar","tar","gz","bz2","xz","iso"];
     public MainWindow(string? startupArchive=null)
     {
         Loc.Language=Loc.Resolve(settings.Language);
@@ -83,10 +84,16 @@ public sealed partial class MainWindow:Window
         if(Navigation.SettingsItem is NavigationViewItem settingsItem)settingsItem.Content=T("设置","Settings");
         StatusText.Text=T("就绪 · 本地 7-Zip 26.05 引擎","Ready · local 7-Zip 26.05 engine");
     }
-    private static Image? FormatIcon(string path)
+    private string FormatIconPath(string name)
+    {
+        name=name.TrimStart('.').ToLowerInvariant();
+        if(settings.FormatIcons!=null&&settings.FormatIcons.TryGetValue(name,out var custom)&&File.Exists(custom))return custom;
+        return System.IO.Path.Combine(AppContext.BaseDirectory,"Assets","Formats",name+".png");
+    }
+    private Image? FormatIcon(string path)
     {
         var name=System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-        var file=System.IO.Path.Combine(AppContext.BaseDirectory,"Assets","Formats",name+".png");
+        var file=FormatIconPath(name);
         return File.Exists(file)?new Image{Width=32,Height=32,Source=new BitmapImage(new Uri(file))}:null;
     }
     private static TextBlock Text(string text,int size=14,bool bold=false)=>new(){Text=text,FontSize=size,FontWeight=bold?Microsoft.UI.Text.FontWeights.SemiBold:Microsoft.UI.Text.FontWeights.Normal,TextWrapping=TextWrapping.Wrap};
@@ -503,6 +510,65 @@ public sealed partial class MainWindow:Window
     private static string NormalizeTheme(string theme)=>theme switch{"浅色" or "light"=>"light","深色" or "dark"=>"dark","系统" or "system"=>"system",_=>"system"};
     private void ApplyTheme(){Root.RequestedTheme=NormalizeTheme(settings.Theme) switch{"light"=>ElementTheme.Light,"dark"=>ElementTheme.Dark,_=>ElementTheme.Default};}
     private void ApplyIcon(){try{var path=settings.IconPath??System.IO.Path.Combine(AppContext.BaseDirectory,"Assets/logo.png");BrandImage.Source=new BitmapImage(new Uri(path));}catch{settings.IconPath=null;}}
+    private async Task<string> PickPngAsync(string prefix)
+    {
+        var picker=new FileOpenPicker();InitializeWithWindow.Initialize(picker,Hwnd);picker.FileTypeFilter.Add(".png");
+        var file=await picker.PickSingleFileAsync();
+        if(file==null)return "";
+        var props=await file.GetBasicPropertiesAsync();
+        if(props.Size>10*1024*1024)throw new IOException(T("图片不能超过 10 MiB。","The image must not exceed 10 MiB."));
+        using var stream=await file.OpenReadAsync();
+        var decoder=await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
+        if(decoder.PixelWidth>4096||decoder.PixelHeight>4096)throw new IOException(T("图片尺寸不能超过 4096 × 4096。","The image must not exceed 4096 × 4096."));
+        Directory.CreateDirectory(UserSettings.Folder);
+        var target=System.IO.Path.Combine(UserSettings.Folder,prefix+"-"+Guid.NewGuid().ToString("N")+".png");
+        File.Copy(file.Path,target);
+        return target;
+    }
+    private static void DeleteCustomIcon(string? path)
+    {
+        if(path==null)return;
+        try{if(path.StartsWith(UserSettings.Folder,StringComparison.OrdinalIgnoreCase)&&File.Exists(path))File.Delete(path);}catch{}
+    }
+    private void SetFormatPreview(Image preview,string ext)
+    {
+        try{var file=FormatIconPath(ext);preview.Source=File.Exists(file)?new BitmapImage(new Uri(file)):null;}catch{preview.Source=null;}
+    }
+    private void AddIconSettings(StackPanel panel)
+    {
+        var icon=Stack(12);
+        icon.Children.Add(Text(T("应用内图标","App icon"),18,true));
+        icon.Children.Add(Text(T("替换应用内品牌图标。不会修改 EXE、任务栏或系统文件关联。","Replace the brand icon inside the app. EXE, taskbar and file associations are not changed."),12));
+        var preview=new Image{Width=96,Height=96,HorizontalAlignment=HorizontalAlignment.Left,Source=BrandImage.Source};
+        icon.Children.Add(preview);
+        icon.Children.Add(Button(T("替换 PNG 图标","Replace PNG icon"),async(_,_)=>{try{var target=await PickPngAsync("custom-icon");if(target.Length==0)return;var previous=settings.IconPath;settings.IconPath=target;settings.Save();ApplyIcon();preview.Source=BrandImage.Source;DeleteCustomIcon(previous);}catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}}));
+        icon.Children.Add(Button(T("恢复默认","Restore default"),(_,_)=>{var previous=settings.IconPath;settings.IconPath=null;settings.Save();ApplyIcon();preview.Source=BrandImage.Source;DeleteCustomIcon(previous);}));
+        panel.Children.Add(Card(icon));
+
+        var formats=Stack(12);
+        formats.Children.Add(Text(T("压缩文件图标","Archive icons"),18,true));
+        formats.Children.Add(Text(T("替换「最近使用」等位置显示的 7z、ZIP 等格式图标。不会修改资源管理器中的文件关联图标。","Replace the 7z, ZIP and other format icons shown inside the app, such as in Recent. Explorer file-association icons are not changed."),12));
+        foreach(var ext in FormatNames)
+        {
+            var row=new Grid{ColumnSpacing=12};
+            row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(40)});
+            row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});
+            row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+            row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+            var formatPreview=new Image{Width=32,Height=32,VerticalAlignment=VerticalAlignment.Center};
+            SetFormatPreview(formatPreview,ext);
+            row.Children.Add(formatPreview);
+            var label=Text(ext.ToUpperInvariant(),14,true);label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(label,1);row.Children.Add(label);
+            Button? reset=null;
+            var replace=Button(T("替换","Replace"),async(_,_)=>{try{var target=await PickPngAsync("custom-"+ext);if(target.Length==0)return;settings.FormatIcons.TryGetValue(ext,out var previous);settings.FormatIcons[ext]=target;settings.Save();SetFormatPreview(formatPreview,ext);DeleteCustomIcon(previous);if(reset!=null)reset.IsEnabled=true;}catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}});
+            Grid.SetColumn(replace,2);row.Children.Add(replace);
+            reset=Button(T("恢复默认","Restore default"),(_,_)=>{if(settings.FormatIcons.Remove(ext,out var previous)){settings.Save();DeleteCustomIcon(previous);}SetFormatPreview(formatPreview,ext);if(reset!=null)reset.IsEnabled=false;});
+            reset.IsEnabled=settings.FormatIcons.ContainsKey(ext);
+            Grid.SetColumn(reset,3);row.Children.Add(reset);
+            formats.Children.Add(row);
+        }
+        panel.Children.Add(Card(formats));
+    }
     private void ShowSettings()
     {
         var panel=Stack(22);panel.Children.Add(Text(T("设置","Settings"),28,true));
@@ -511,7 +577,7 @@ public sealed partial class MainWindow:Window
         panel.Children.Add(Card(language));
         AddExplorerSettings(panel);AddUpdateSettings(panel);
         var theme=new ComboBox{Header=T("应用主题","Theme"),ItemsSource=new[]{T("跟随系统","System"),T("浅色","Light"),T("深色","Dark")},SelectedIndex=Math.Max(0,Array.IndexOf(ThemeCodes,NormalizeTheme(settings.Theme))),MinWidth=240};theme.SelectionChanged+=(_,_)=>{settings.Theme=ThemeCodes[theme.SelectedIndex];settings.Save();ApplyTheme();};panel.Children.Add(Card(theme));
-        var icon=Stack(12);icon.Children.Add(Text(T("应用内图标","App icon"),18,true));icon.Children.Add(Text(T("替换应用内品牌图标。不会修改 EXE、任务栏或系统文件关联。","Replace the brand icon inside the app. EXE, taskbar and file associations are not changed."),12));var preview=new Image{Width=96,Height=96,HorizontalAlignment=HorizontalAlignment.Left,Source=BrandImage.Source};icon.Children.Add(preview);icon.Children.Add(Button(T("替换 PNG 图标","Replace PNG icon"),async(_,_)=>{try{var picker=new FileOpenPicker();InitializeWithWindow.Initialize(picker,Hwnd);picker.FileTypeFilter.Add(".png");var file=await picker.PickSingleFileAsync();if(file==null)return;var props=await file.GetBasicPropertiesAsync();if(props.Size>10*1024*1024)throw new IOException(T("图片不能超过 10 MiB。","The image must not exceed 10 MiB."));using var stream=await file.OpenReadAsync();var decoder=await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);if(decoder.PixelWidth>4096||decoder.PixelHeight>4096)throw new IOException(T("图片尺寸不能超过 4096 × 4096。","The image must not exceed 4096 × 4096."));Directory.CreateDirectory(UserSettings.Folder);var target=System.IO.Path.Combine(UserSettings.Folder,"custom-icon-"+Guid.NewGuid().ToString("N")+".png");File.Copy(file.Path,target);var previous=settings.IconPath;settings.IconPath=target;settings.Save();ApplyIcon();preview.Source=BrandImage.Source;if(previous!=null&&previous.StartsWith(UserSettings.Folder,StringComparison.OrdinalIgnoreCase)&&File.Exists(previous))File.Delete(previous);}catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}}));icon.Children.Add(Button(T("恢复默认","Restore default"),(_,_)=>{settings.IconPath=null;settings.Save();ApplyIcon();preview.Source=BrandImage.Source;}));panel.Children.Add(Card(icon));
+        AddIconSettings(panel);
         var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text(T("MIT 开源许可","MIT open-source license"),14));about.Children.Add(Text(T("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。","Local 7-Zip 26.05 engine · no separate 7-Zip installation needed\nCreates 7z/ZIP; other formats are read according to engine support. RAR is extract-only.\nPreview is read-only; images up to 32 MiB and text up to 2 MiB."),12));panel.Children.Add(Card(about));ShowContent(new ScrollViewer{Content=panel});
     }
     private bool closingApproved;

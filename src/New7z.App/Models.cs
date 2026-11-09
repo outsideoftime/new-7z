@@ -32,9 +32,10 @@ public sealed class UserSettings
     public string Theme {get;set;}="system";
     public string Language {get;set;}="system";
     public string? IconPath {get;set;}
+    public Dictionary<string,string> FormatIcons {get;set;}=[];
     public bool AutoCheckUpdates {get;set;}=true;
     public List<string> Recent {get;set;}=[];
     public static string Folder=>System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"New7z");
-    public static UserSettings Load(){try{return System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(System.IO.Path.Combine(Folder,"settings.json")),AppJsonContext.Default.UserSettings)??new();}catch{return new();}}
+    public static UserSettings Load(){try{var loaded=System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(System.IO.Path.Combine(Folder,"settings.json")),AppJsonContext.Default.UserSettings)??new();loaded.FormatIcons??=[];return loaded;}catch{return new();}}
     public void Save(){Directory.CreateDirectory(Folder);var target=System.IO.Path.Combine(Folder,"settings.json");var temp=target+".tmp";File.WriteAllText(temp,System.Text.Json.JsonSerializer.Serialize(this,AppJsonContext.Default.UserSettings));File.Move(temp,target,true);}
 }

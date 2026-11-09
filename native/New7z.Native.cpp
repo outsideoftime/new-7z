@@ -2,11 +2,14 @@
 #include <windows.h>
 #include <propidl.h>
 #include <oleauto.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <unordered_map>
 #include "../7zSdk/Source/CPP/Common/MyInitGuid.h"
 #include "../7zSdk/Source/CPP/7zip/Archive/IArchive.h"
 #include "../7zSdk/Source/CPP/7zip/IPassword.h"
@@ -100,6 +103,141 @@ public:
   METHOD(SetOperationResult,(Int32 r)){if(r!=NArchive::NExtract::NOperationResult::kOK)result=(r==NArchive::NExtract::NOperationResult::kWrongPassword||status.passwordAsked)?PasswordRequired:DataInvalid;return result;}
   METHOD(CryptoGetTextPassword,(BSTR* pw)){return status.getPassword(pw);}
 };
+struct DragItem{UInt32 index;std::wstring path;bool directory;UInt64 limit;};
+static bool ensureDirectory(const std::wstring& value){
+  if(value.empty())return false;
+  DWORD attributes=GetFileAttributesW(value.c_str());
+  if(attributes!=INVALID_FILE_ATTRIBUTES)return (attributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
+  size_t end=value.size();while(end>3&&(value[end-1]==L'\\'||value[end-1]==L'/'))--end;
+  std::wstring path=value.substr(0,end);size_t slash=path.find_last_of(L"\\/");
+  if(slash==std::wstring::npos)return false;
+  std::wstring parent;
+  if(slash==2&&path.size()>2&&path[1]==L':')parent=path.substr(0,3);
+  else if(slash==0)parent=path.substr(0,1);
+  else parent=path.substr(0,slash);
+  if(parent==path||!ensureDirectory(parent))return false;
+  if(CreateDirectoryW(path.c_str(),nullptr))return true;
+  return GetLastError()==ERROR_ALREADY_EXISTS&&(GetFileAttributesW(path.c_str())&FILE_ATTRIBUTE_DIRECTORY)!=0;
+}
+static bool isWithinDirectory(const std::wstring& root,const std::wstring& path){
+  size_t length=root.size();while(length>3&&(root[length-1]==L'\\'||root[length-1]==L'/'))--length;
+  if(path.size()<=length||_wcsnicmp(root.c_str(),path.c_str(),length)!=0)return false;
+  return path[length]==L'\\'||path[length]==L'/';
+}
+static HRESULT makeDropFiles(const std::vector<std::wstring>& paths,STGMEDIUM* medium){
+  try{
+    size_t chars=1;for(const auto& path:paths){if(path.size()>SIZE_MAX-chars-1)return E_OUTOFMEMORY;chars+=path.size()+1;}
+    const SIZE_T bytes=sizeof(DROPFILES)+chars*sizeof(wchar_t);
+    HGLOBAL global=GlobalAlloc(GMEM_MOVEABLE|GMEM_ZEROINIT,bytes);if(!global)return E_OUTOFMEMORY;
+    auto drop=static_cast<DROPFILES*>(GlobalLock(global));if(!drop){GlobalFree(global);return E_OUTOFMEMORY;}
+    drop->pFiles=sizeof(DROPFILES);drop->fWide=TRUE;
+    auto destination=reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(drop)+sizeof(DROPFILES));
+    for(const auto& path:paths){memcpy(destination,path.c_str(),path.size()*sizeof(wchar_t));destination+=path.size()+1;}
+    *destination=L'\0';GlobalUnlock(global);medium->tymed=TYMED_HGLOBAL;medium->hGlobal=global;medium->pUnkForRelease=nullptr;return S_OK;
+  }catch(...){return E_OUTOFMEMORY;}
+}
+class DragExtractCallback final:public IArchiveExtractCallback,public ICryptoGetTextPassword {
+  Status& status;std::unordered_map<UInt32,DragItem>& items;std::vector<Output*> outputs;
+public:
+  HRESULT result=S_OK;
+  DragExtractCallback(Status& s,std::unordered_map<UInt32,DragItem>& i):status(s),items(i){}
+  ~DragExtractCallback(){for(auto output:outputs)output->Release();}
+  REFS
+  METHOD(QueryInterface,(REFIID iid,void** out)){*out=nullptr;if(iid==IID_IUnknown||iid==IID_IArchiveExtractCallback||iid==IID_IProgress)*out=static_cast<IArchiveExtractCallback*>(this);else if(iid==IID_ICryptoGetTextPassword)*out=static_cast<ICryptoGetTextPassword*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
+  METHOD(SetTotal,(UInt64 value)){status.total=value;return status.report(0);}
+  METHOD(SetCompleted,(const UInt64* value)){return status.report(value?*value:0);}
+  METHOD(GetStream,(UInt32 index,ISequentialOutStream** stream,Int32 mode)){
+    *stream=nullptr;if(mode!=NArchive::NExtract::NAskMode::kExtract)return S_OK;
+    auto found=items.find(index);if(found==items.end())return E_INVALIDARG;
+    if(found->second.directory)return S_OK;
+    HRESULT progressResult=status.report(0);if(FAILED(progressResult))return progressResult;
+    auto output=new(std::nothrow) Output(found->second.path.c_str(),found->second.limit);if(!output)return E_OUTOFMEMORY;
+    if(!output->valid()){HRESULT hr=HRESULT_FROM_WIN32(GetLastError());output->Release();return hr;}
+    try{outputs.push_back(output);}catch(...){output->Release();return E_OUTOFMEMORY;}
+    output->AddRef();*stream=output;return S_OK;
+  }
+  METHOD(PrepareOperation,(Int32)){return S_OK;}
+  METHOD(SetOperationResult,(Int32 value)){if(value!=NArchive::NExtract::NOperationResult::kOK)result=(value==NArchive::NExtract::NOperationResult::kWrongPassword||status.passwordAsked)?PasswordRequired:DataInvalid;return result;}
+  METHOD(CryptoGetTextPassword,(BSTR* pw)){return status.getPassword(pw);}
+};
+class DragDataObject final:public IDataObject {
+  std::atomic<ULONG> refs{1};
+  std::wstring archivePath,password,tempPath;std::vector<UInt32> indices;std::vector<std::wstring> outputPaths,rootPaths;
+  Progress progress;void* context;bool dropped=false,prepared=false;HRESULT preparationResult=S_OK;
+  std::vector<FORMATETC> formats;
+  HRESULT prepare(){
+    if(prepared)return preparationResult;prepared=true;
+    try{
+      Archive a(password.c_str(),progress,context);HRESULT hr=a.open(archivePath.c_str());if(FAILED(hr))return preparationResult=hr;
+      UInt32 itemCount=0;if(FAILED(hr=a.archive->GetNumberOfItems(&itemCount)))return preparationResult=hr;
+      if(indices.empty()||indices.size()!=outputPaths.size()||indices.size()>1000000||rootPaths.empty())return preparationResult=E_INVALIDARG;
+      std::unordered_map<UInt32,DragItem> items;items.reserve(indices.size());
+      for(size_t i=0;i<indices.size();i++){
+        if(indices[i]>=itemCount||!isWithinDirectory(tempPath,outputPaths[i]))return preparationResult=E_INVALIDARG;
+        Variant size,directory;a.archive->GetProperty(indices[i],kpidSize,&size.v);a.archive->GetProperty(indices[i],kpidIsDir,&directory.v);
+        DragItem item{indices[i],outputPaths[i],propBool(directory.v),std::max<UInt64>(number(size.v),1)};
+        if(!items.emplace(item.index,item).second)return preparationResult=E_INVALIDARG;
+        const std::wstring directoryPath=item.directory?item.path:item.path.substr(0,item.path.find_last_of(L"\\/"));
+        if(directoryPath.empty()||!isWithinDirectory(tempPath,directoryPath)||!ensureDirectory(directoryPath))return preparationResult=HRESULT_FROM_WIN32(GetLastError());
+      }
+      for(const auto& root:rootPaths)if(!isWithinDirectory(tempPath,root))return preparationResult=E_INVALIDARG;
+      Ptr<DragExtractCallback> callback;callback.p=new DragExtractCallback(a.status,items);
+      hr=a.archive->Extract(indices.data(),static_cast<UInt32>(indices.size()),0,callback.p);
+      if(FAILED(hr))return preparationResult=a.status.passwordAsked&&hr!=E_ABORT?PasswordRequired:hr;
+      if(FAILED(callback->result))return preparationResult=callback->result;
+      for(const auto& root:rootPaths){DWORD attributes=GetFileAttributesW(root.c_str());if(attributes==INVALID_FILE_ATTRIBUTES)return preparationResult=HRESULT_FROM_WIN32(GetLastError());}
+      return preparationResult=S_OK;
+    }catch(...){return preparationResult=E_OUTOFMEMORY;}
+  }
+public:
+  DragDataObject(const wchar_t* archive,const wchar_t* password,const wchar_t* temp,const UInt32* itemIndices,const wchar_t* const* outputs,UInt32 count,const wchar_t* const* roots,UInt32 rootCount,Progress cb,void* ctx)
+    :archivePath(archive),password(password?password:L""),tempPath(temp),indices(itemIndices,itemIndices+count),progress(cb),context(ctx){
+    outputPaths.reserve(count);for(UInt32 i=0;i<count;i++)outputPaths.emplace_back(outputs[i]);
+    rootPaths.reserve(rootCount);for(UInt32 i=0;i<rootCount;i++)rootPaths.emplace_back(roots[i]);
+    formats.push_back({CF_HDROP,nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL});
+  }
+  ULONG STDMETHODCALLTYPE AddRef() noexcept override{return ++refs;}
+  ULONG STDMETHODCALLTYPE Release() noexcept override{auto n=--refs;if(!n)delete this;return n;}
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) noexcept override{*out=nullptr;if(iid==IID_IUnknown||iid==IID_IDataObject)*out=static_cast<IDataObject*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
+  HRESULT STDMETHODCALLTYPE GetData(FORMATETC* format,STGMEDIUM* medium) noexcept override{
+    if(!format||!medium)return E_INVALIDARG;HRESULT hr=QueryGetData(format);if(FAILED(hr))return hr;
+    try{std::vector<std::wstring> paths;if(dropped){hr=prepare();if(FAILED(hr))return hr;paths=rootPaths;}else paths.push_back(tempPath);return makeDropFiles(paths,medium);}catch(...){return E_OUTOFMEMORY;}
+  }
+  HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*,STGMEDIUM*) noexcept override{return DATA_E_FORMATETC;}
+  HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* format) noexcept override{
+    if(!format)return E_INVALIDARG;if(format->cfFormat!=CF_HDROP)return DV_E_FORMATETC;if(format->dwAspect!=DVASPECT_CONTENT)return DV_E_DVASPECT;if(!(format->tymed&TYMED_HGLOBAL))return DV_E_TYMED;return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*,FORMATETC* output) noexcept override{if(!output)return E_INVALIDARG;output->ptd=nullptr;return DATA_S_SAMEFORMATETC;}
+  HRESULT STDMETHODCALLTYPE SetData(FORMATETC*,STGMEDIUM*,BOOL) noexcept override{return E_NOTIMPL;}
+  HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD direction,IEnumFORMATETC** out) noexcept override;
+  HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC*,DWORD,IAdviseSink*,DWORD*) noexcept override{return OLE_E_ADVISENOTSUPPORTED;}
+  HRESULT STDMETHODCALLTYPE DUnadvise(DWORD) noexcept override{return OLE_E_ADVISENOTSUPPORTED;}
+  HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA** out) noexcept override{if(out)*out=nullptr;return OLE_E_ADVISENOTSUPPORTED;}
+  void markDropped(){dropped=true;}
+  HRESULT result()const{return preparationResult;}
+};
+class DragFormatEnumerator final:public IEnumFORMATETC {
+  std::atomic<ULONG> refs{1};UINT position=0;FORMATETC format{CF_HDROP,nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL};
+public:
+  ULONG STDMETHODCALLTYPE AddRef() noexcept override{return ++refs;}
+  ULONG STDMETHODCALLTYPE Release() noexcept override{auto n=--refs;if(!n)delete this;return n;}
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) noexcept override{*out=nullptr;if(iid==IID_IUnknown||iid==IID_IEnumFORMATETC)*out=static_cast<IEnumFORMATETC*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
+  HRESULT STDMETHODCALLTYPE Next(ULONG count,FORMATETC* out,ULONG* fetched) noexcept override{if(fetched)*fetched=0;if(count&& !out)return E_POINTER;ULONG copied=0;while(copied<count&&position==0){out[copied++]=format;position=1;}if(fetched)*fetched=copied;return copied==count?S_OK:S_FALSE;}
+  HRESULT STDMETHODCALLTYPE Skip(ULONG count) noexcept override{if(position==0&&count){position=1;return count==1?S_OK:S_FALSE;}return count==0?S_OK:S_FALSE;}
+  HRESULT STDMETHODCALLTYPE Reset() noexcept override{position=0;return S_OK;}
+  HRESULT STDMETHODCALLTYPE Clone(IEnumFORMATETC** out) noexcept override{if(!out)return E_POINTER;auto clone=new(std::nothrow) DragFormatEnumerator();if(!clone)return E_OUTOFMEMORY;clone->position=position;*out=clone;return S_OK;}
+};
+HRESULT DragDataObject::EnumFormatEtc(DWORD direction,IEnumFORMATETC** out) noexcept{if(!out)return E_POINTER;*out=nullptr;if(direction!=DATADIR_GET)return E_NOTIMPL;auto enumerator=new(std::nothrow) DragFormatEnumerator();if(!enumerator)return E_OUTOFMEMORY;*out=enumerator;return S_OK;}
+class DragDropSource final:public IDropSource {
+  std::atomic<ULONG> refs{1};DragDataObject* data;DWORD effect=DROPEFFECT_NONE;
+public:
+  explicit DragDropSource(DragDataObject* object):data(object){}
+  ULONG STDMETHODCALLTYPE AddRef() noexcept override{return ++refs;}
+  ULONG STDMETHODCALLTYPE Release() noexcept override{auto n=--refs;if(!n)delete this;return n;}
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) noexcept override{*out=nullptr;if(iid==IID_IUnknown||iid==IID_IDropSource)*out=static_cast<IDropSource*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
+  HRESULT STDMETHODCALLTYPE QueryContinueDrag(BOOL escape,DWORD keys) noexcept override{if(escape)return DRAGDROP_S_CANCEL;if(keys&MK_LBUTTON)return S_OK;if(effect==DROPEFFECT_NONE)return DRAGDROP_S_CANCEL;data->markDropped();return DRAGDROP_S_DROP;}
+  HRESULT STDMETHODCALLTYPE GiveFeedback(DWORD value) noexcept override{effect=value&DROPEFFECT_COPY;return DRAGDROP_S_USEDEFAULTCURSORS;}
+};
 static HRESULT fillNewItemProperty(const wchar_t* path,const wchar_t* name,PROPID prop,PROPVARIANT* value){
   PropVariantInit(value);WIN32_FILE_ATTRIBUTE_DATA info;
   if(!GetFileAttributesExW(path,GetFileExInfoStandard,&info))return HRESULT_FROM_WIN32(GetLastError());
@@ -141,6 +279,21 @@ public:
 };
 API int __cdecl NzInitialize(const wchar_t* path){std::lock_guard<std::mutex> lock(initMutex);if(engine)return S_OK;engine=LoadLibraryExW(path,nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);if(!engine)return HRESULT_FROM_WIN32(GetLastError());createObject=reinterpret_cast<Creator>(GetProcAddress(engine,"CreateObject"));getHandlerProp=reinterpret_cast<HandlerProp>(GetProcAddress(engine,"GetHandlerProperty2"));return createObject&&getHandlerProp?S_OK:E_FAIL;}
 API void __cdecl NzFree(void* ptr){CoTaskMemFree(ptr);}
+API int __cdecl NzDragArchive(HWND owner,const wchar_t* archive,const wchar_t* password,const UInt32* indices,const wchar_t* const* outputPaths,UInt32 count,const wchar_t* const* roots,UInt32 rootCount,const wchar_t* temp,Progress progress,void* ctx){
+  if(!archive||!indices||!outputPaths||!count||count>1000000||!roots||!rootCount||rootCount>1000000||!temp)return E_INVALIDARG;
+  HRESULT initialized=OleInitialize(nullptr);if(FAILED(initialized))return initialized;
+  int result=S_OK;
+  try{
+    Ptr<DragDataObject> data;data.p=new DragDataObject(archive,password,temp,indices,outputPaths,count,roots,rootCount,progress,ctx);
+    Ptr<DragDropSource> source;source.p=new DragDropSource(data.p);
+    DWORD effect=DROPEFFECT_NONE;HRESULT hr=DoDragDrop(data.p,source.p,DROPEFFECT_COPY,&effect);
+    if(FAILED(data->result()))result=data->result();
+    else if(hr==DRAGDROP_S_DROP&&(effect&DROPEFFECT_COPY))result=S_OK;
+    else if(FAILED(hr))result=hr;
+    else result=S_FALSE;
+  }catch(...){result=E_OUTOFMEMORY;}
+  OleUninitialize();return result;
+}
 API int __cdecl NzList(const wchar_t* path,const wchar_t* password,wchar_t** json,Progress progress,void* ctx){*json=nullptr;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;UInt32 count=0;if(FAILED(hr=a.archive->GetNumberOfItems(&count)))return hr;if(count>1000000)return SizeLimit;std::wstring text=L"[";for(UInt32 i=0;i<count;i++){if(FAILED(a.status.report(i)))return E_ABORT;Variant name,size,packed,dir,encrypted,time,link,hard,attrs;a.archive->GetProperty(i,kpidPath,&name.v);a.archive->GetProperty(i,kpidSize,&size.v);a.archive->GetProperty(i,kpidPackSize,&packed.v);a.archive->GetProperty(i,kpidIsDir,&dir.v);a.archive->GetProperty(i,kpidEncrypted,&encrypted.v);a.archive->GetProperty(i,kpidMTime,&time.v);a.archive->GetProperty(i,kpidSymLink,&link.v);a.archive->GetProperty(i,kpidHardLink,&hard.v);a.archive->GetProperty(i,kpidAttrib,&attrs.v);if(i)text+=L",";UInt64 ft=time.v.vt==VT_FILETIME?(UInt64(time.v.filetime.dwHighDateTime)<<32)|time.v.filetime.dwLowDateTime:0;text+=L"{\"Index\":"+std::to_wstring(i)+L",\"Path\":"+quote(name.v.vt==VT_BSTR?name.v.bstrVal:L"content")+L",\"Size\":"+std::to_wstring(number(size.v))+L",\"PackedSize\":"+(packed.v.vt==VT_EMPTY?L"null":std::to_wstring(number(packed.v)))+L",\"IsDirectory\":"+(propBool(dir.v)?L"true":L"false")+L",\"Encrypted\":"+(propBool(encrypted.v)?L"true":L"false")+L",\"IsLink\":"+((link.v.vt==VT_BSTR||hard.v.vt==VT_BSTR||(number(attrs.v)&FILE_ATTRIBUTE_REPARSE_POINT))?L"true":L"false")+L",\"FileTime\":"+std::to_wstring(ft)+L"}";}text+=L"]";const auto n=(text.size()+1)*sizeof(wchar_t);*json=static_cast<wchar_t*>(CoTaskMemAlloc(n));if(!*json)return E_OUTOFMEMORY;memcpy(*json,text.c_str(),n);return S_OK;}catch(...){return E_OUTOFMEMORY;}}
 API int __cdecl NzExtract(const wchar_t* path,const wchar_t* password,UInt32 index,const wchar_t* output,UInt64 limit,unsigned char** data,UInt64* size,Progress progress,void* ctx){if(data)*data=nullptr;if(size)*size=0;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Variant property;a.archive->GetProperty(index,kpidSize,&property.v);if(number(property.v)>limit)return SizeLimit;Ptr<Output> stream;stream.p=new Output(output,limit);if(!stream->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,stream.p);hr=a.archive->Extract(&index,1,0,callback.p);if(FAILED(hr))return a.status.passwordAsked&&hr!=E_ABORT?PasswordRequired:hr;if(FAILED(callback->result))return callback->result;if(!output&&data&&size){*size=stream->bytes.size();*data=static_cast<unsigned char*>(CoTaskMemAlloc(size_t(*size?*size:1)));if(!*data)return E_OUTOFMEMORY;if(*size)memcpy(*data,stream->bytes.data(),size_t(*size));}return S_OK;}catch(...){return E_OUTOFMEMORY;}}
 API int __cdecl NzTest(const wchar_t* path,const wchar_t* password,Progress progress,void* ctx){try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,nullptr);hr=a.archive->Extract(nullptr,UInt32(-1),1,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}

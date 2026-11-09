@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using New7z.Core;
 
 namespace New7z.App;
@@ -12,7 +10,7 @@ public sealed record ArchiveRow(ArchiveEntry Entry)
     public string ModifiedText=>Entry.ModifiedText;
     public string Glyph=>Entry.IsDirectory?"\uE8B7":Entry.IsImage?"\uEB9F":Entry.IsText?"\uE8A5":"\uE7C3";
 }
-public sealed class ArchiveJob(string title,string destination):INotifyPropertyChanged
+public sealed class ArchiveJob(string title,string destination)
 {
     public string Title {get;}=title;
     public string Destination {get;}=destination;
@@ -20,12 +18,15 @@ public sealed class ArchiveJob(string title,string destination):INotifyPropertyC
     private string status="";
     private double percent;
     private bool active=true;
-    public string Status {get=>status;set{status=value;Changed();Changed(nameof(CanCancel));}}
+    private string currentItem="";
+    public string Status {get=>status;set{status=value;Changed();}}
     public double Percent {get=>percent;set{percent=value;Changed();}}
-    public bool Active {get=>active;set{active=value;Changed();Changed(nameof(CanCancel));}}
+    public string PercentText=>$"{percent:0}%";
+    public string CurrentItem {get=>currentItem;set{currentItem=value;Changed();}}
+    public bool Active {get=>active;set{active=value;Changed();}}
     public bool CanCancel=>active;
-    public event PropertyChangedEventHandler? PropertyChanged;
-    private void Changed([CallerMemberName]string? name=null)=>PropertyChanged?.Invoke(this,new(name));
+    public event Action<ArchiveJob>? Updated;
+    private void Changed()=>Updated?.Invoke(this);
 }
 public sealed class UserSettings
 {

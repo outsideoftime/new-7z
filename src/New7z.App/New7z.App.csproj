@@ -12,6 +12,7 @@
   <!-- Microsoft Store build: MSIX, package-declared associations, Store-managed updates. -->
   <PropertyGroup Condition="'$(StorePackage)' == 'true'">
     <WindowsPackageType>MSIX</WindowsPackageType><EnableMsixTooling>true</EnableMsixTooling>
+    <SelfContained>true</SelfContained>
     <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
     <AppxPackageDir>$(MSBuildProjectDirectory)/../../artifacts/msix/</AppxPackageDir>
     <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>

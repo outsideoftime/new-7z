@@ -1,9 +1,14 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using static New7z.Core.Loc;
 namespace New7z.App;
 
 internal sealed record ShellRequest(string Action,string[] Paths)
 {
+    // In-process only: extracting selected entries from an archive already open in the app.
+    public string[]? Entries {get;init;}
+    public string? Target {get;init;}
+    [JsonIgnore] public string? Password {get;init;}
     public static async Task<ShellRequest> ReadAsync(string path)
     {
         var root=System.IO.Path.GetFullPath(System.IO.Path.Combine(UserSettings.Folder,"Requests"));

@@ -15,7 +15,7 @@
   -->
   <Identity Name="B8EC7EE8.New7z"
             Publisher="CN=7C74DB3A-AD98-46DA-A414-D5D981956821"
-            Version="0.1.25.0"
+            Version="0.1.27.0"
             ProcessorArchitecture="x64" />
 
   <Properties>
@@ -31,7 +31,6 @@
     <virtualization:RegistryWriteVirtualization>
       <virtualization:ExcludedKeys>
         <virtualization:ExcludedKey>HKEY_CURRENT_USER\Software\New7z</virtualization:ExcludedKey>
-        <virtualization:ExcludedKey>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked</virtualization:ExcludedKey>
       </virtualization:ExcludedKeys>
     </virtualization:RegistryWriteVirtualization>
     <virtualization:FileSystemWriteVirtualization>
@@ -131,7 +130,3 @@
     <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 </Package>
-
-
-
-

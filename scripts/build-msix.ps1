@@ -29,7 +29,7 @@ try
     }
   }
 
-  & dotnet publish 'src/New7z.App/New7z.App.csproj' -c Release -p:Platform=x64 -p:StorePackage=true -p:TrimRelease=false
+  & dotnet publish 'src/New7z.App/New7z.App.csproj' -c Release -p:Platform=x64 -p:StorePackage=true -p:TrimRelease=false --self-contained true
   if($LASTEXITCODE){throw 'MSIX publish failed.'}
 
   $msix=Get-ChildItem -LiteralPath 'artifacts/msix' -Filter '*.msix' -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 1

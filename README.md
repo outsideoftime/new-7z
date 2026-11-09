@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前预览版：**0.1.25**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前预览版：**0.1.27**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
@@ -23,21 +23,7 @@
 
 普通未加密 ZIP 的标准/更快模式使用流式 ZIP 编码；体积优先、密码 ZIP 和全部 7z 使用 7-Zip。读取、预览、解压仍使用 7-Zip。详见 [ZIP 性能记录](docs/ZIP性能优化.md)。
 
-## 界面
-
-| 主页 | 压缩包浏览 |
-|---|---|
-| ![主页](docs/app-screenshots/01-主页.png) | ![压缩包浏览](docs/app-screenshots/02-压缩包浏览.png) |
-
-| 新建压缩 | 解压到 |
-|---|---|
-| ![新建压缩](docs/app-screenshots/03-新建压缩.png) | ![解压到](docs/app-screenshots/04-解压到.png) |
-
-![设置](docs/app-screenshots/05-设置.png)
-
-更多截图见 [docs/app-screenshots](docs/app-screenshots)。
-
-### 文件图标
+## 文件图标
 
 新版的格式图标：7z、ZIP、RAR、TAR、GZ、BZ2、XZ、ISO 各有独立图标，用于文件关联、「默认应用」和「最近使用」列表。
 
@@ -84,7 +70,7 @@ New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zi
 ./scripts/build-msix.ps1 -RequireStoreIdentity
 ```
 
-发行构建采用 WinUI 组件依赖与部分托管裁剪，保留自有程序集和 JSON 源生成上下文；可用 `-Untrimmed` 构建未裁剪对照版。当前两个 Windows SDK/WinRT 第三方程序集会报告 IL2104 裁剪警告，已验证发布版设置、XAML 文件名绑定、文本/图片读取及快捷任务；更多环境仍需验证。
+发行构建采用 WinUI 组件依赖与部分托管裁剪，保留自有程序集、JSON 源生成上下文和 WinRT.Runtime 全部成员（CsWinRT 的 ABI 辅助类型依赖反射解析，裁掉后会让 XAML 绑定对象编组失败）；可用 `-Untrimmed` 构建未裁剪对照版。Microsoft.Windows.SDK.NET 程序集会报告 IL2104 裁剪警告；已验证发布版设置、XAML 文件名绑定、文本/图片读取及快捷任务，更多环境仍需验证。
 
 ```powershell
 ./scripts/test.ps1                   # 37 项引擎/安全/配置检查
@@ -101,7 +87,7 @@ New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zi
 
 [工程说明](docs/工程说明.md) · [功能设计](docs/功能设计.md) · [交互原型](prototype/index.html) · [右键菜单设计](prototype/context-menu-design.html) · [DESIGN.md](DESIGN.md) · [UX-CONTRACT.md](UX-CONTRACT.md)
 
-HTML 原型使用示例数据，不读写真实压缩包；`docs/screenshots` 和 `docs/menu-screenshots` 是原型截图，真实应用截图在 `docs/app-screenshots`。真实产品在 `src/` 与 `native/`。原型检查：`npm ci`、`npm run check`、`npm run verify`、`npm run verify:menus`；浏览器缺失时先执行 `npx playwright install chromium`。
+HTML 原型使用示例数据，不读写真实压缩包；真实产品在 `src/` 与 `native/`。原型检查：`npm ci`、`npm run check`、`npm run verify`、`npm run verify:menus`；浏览器缺失时先执行 `npx playwright install chromium`。
 
 当前为早期预览版：仅 x64，尚无自动更新、跨卷回调、独立引擎崩溃隔离；固实大包的逐文件解压性能、归档列表排序与属性面板仍需完善。RAR 使用完整引擎读取，但尚无 RAR 实例集成测试。具体预览大小限制与差异见工程说明。
 

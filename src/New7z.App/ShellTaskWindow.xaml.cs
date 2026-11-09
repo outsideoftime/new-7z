@@ -110,9 +110,9 @@ public sealed partial class ShellTaskWindow:Window
         var action=request.Action;
         Heading.Text=action.StartsWith("create")?T("压缩文件","Create Archive"):action=="test"?T("测试完整性","Test Integrity"):T("解压文件","Extract Files");
         Title="New7z · "+Heading.Text;
-        SourceText.Text=request.Paths.Length==1?System.IO.Path.GetFileName(request.Paths[0]):T($"已选择 {request.Paths.Length} 个项目",$"Selected {request.Paths.Length} items");
+        SourceText.Text=action=="extract-entries"?T($"{System.IO.Path.GetFileName(request.Paths[0])} · {request.Entries?.Length??0} 项",$"{System.IO.Path.GetFileName(request.Paths[0])} · {request.Entries?.Length??0} items"):request.Paths.Length==1?System.IO.Path.GetFileName(request.Paths[0]):T($"已选择 {request.Paths.Length} 个项目",$"Selected {request.Paths.Length} items");
         ToolTipService.SetToolTip(SourceText,string.Join(Environment.NewLine,request.Paths.Take(20)));
-        if(action is "create" or "extract-to"){Configure();return;}
+        if(action is "create" or "extract-to" or "extract-entries"){Configure();return;}
         PrepareTargets();await RunAsync();
     }
     private void Configure()
@@ -120,7 +120,7 @@ public sealed partial class ShellTaskWindow:Window
         TaskScrollViewer.VerticalAlignment=VerticalAlignment.Top;
         Configuration.Visibility=Visibility.Visible;ProgressSection.Visibility=Visibility.Collapsed;
         StartButton.Visibility=Visibility.Visible;CancelButton.Content=T("取消","Cancel");
-        output=new TextBox{Header=request!.Action=="create"?T("保存为","Save as"):T("目标目录","Target folder"),Text=request.Action=="create"?ShellPaths.CreateTarget(request,"7z"):System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
+        output=new TextBox{Header=request!.Action=="create"?T("保存为","Save as"):T("目标目录","Target folder"),Text=request.Action=="create"?ShellPaths.CreateTarget(request,"7z"):request.Action=="extract-entries"&&request.Target!=null?request.Target:System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
         if(request.Action=="extract-to"&&request.Paths.Length>1)output.Text=System.IO.Path.GetDirectoryName(request.Paths[0])!;
         Configuration.Children.Add(output);
         var browse=new Button{Content=T("选择文件夹","Choose Folder")};browse.Click+=Browse_Click;Configuration.Children.Add(browse);
@@ -169,6 +169,11 @@ public sealed partial class ShellTaskWindow:Window
     }
     private void PrepareTargets()
     {
+        if(request!.Action=="extract-entries")
+        {
+            destination=output?.Text??request.Target??System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]));
+            targets=[destination];return;
+        }
         if(request!.Action.StartsWith("create"))
         {
             destination=output?.Text??ShellPaths.CreateTarget(request,request.Action=="create-zip"?"zip":"7z");targets=[destination];return;
@@ -238,7 +243,7 @@ public sealed partial class ShellTaskWindow:Window
     }
     private async Task ProcessArchiveAsync(string source,string target,IProgress<EngineProgress> progress)
     {
-        string? key=null;
+        string? key=request!.Password;
         while(true)
         {
             cancellation.Token.ThrowIfCancellationRequested();
@@ -249,6 +254,11 @@ public sealed partial class ShellTaskWindow:Window
                 {
                     var entries=await engine.ListAsync(source,key,cancellation.Token);
                     if(entries.Any(e=>e.Encrypted)&&string.IsNullOrEmpty(key))throw new ArchivePasswordException();
+                    if(request.Action=="extract-entries"&&request.Entries is {Length:>0} wanted)
+                    {
+                        var roots=new HashSet<string>(wanted,StringComparer.Ordinal);
+                        entries=entries.Where(e=>roots.Contains(e.NormalizedPath)||roots.Any(r=>e.NormalizedPath.StartsWith(r+"/",StringComparison.Ordinal))).ToList();
+                    }
                     await engine.ExtractAsync(source,entries,target,(ConflictPolicy)(conflict?.SelectedIndex??0),key,progress,cancellation.Token);
                 }
                 return;

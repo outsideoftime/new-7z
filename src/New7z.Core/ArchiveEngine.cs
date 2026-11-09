@@ -64,6 +64,36 @@ public sealed class ArchiveEngine
         var callback=Callback(cancellation,progress);Check(NativeMethods.NzTest(path,password,callback,IntPtr.Zero),cancellation);GC.KeepAlive(callback);
     },cancellation);
 
+    public bool DragArchive(string archive,IReadOnlyList<ArchiveEntry> selected,IReadOnlyList<ArchiveEntry> roots,string tempPath,IntPtr owner,string? password=null,Action<EngineProgress>? progress=null)
+    {
+        if(selected.Count==0||roots.Count==0)throw new ArgumentException(Loc.T("没有可以拖动的压缩包内容。", "There is nothing to drag from this archive."));
+        var root=System.IO.Path.GetFullPath(tempPath);Directory.CreateDirectory(root);EnsureNoReparse(root);
+        var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);var outputByIndex=new Dictionary<uint,string>();
+        foreach(var entry in selected)
+        {
+            if(entry.IsLink)throw new IOException(Loc.T($"不拖动链接条目：{entry.Path}", $"Link entries cannot be dragged: {entry.Path}"));
+            var output=ResolveOutput(root,entry.NormalizedPath);
+            if(!used.Add(output))
+            {
+                var parent=System.IO.Path.GetDirectoryName(output)!;var name=System.IO.Path.GetFileName(output);
+                var extension=entry.IsDirectory?"":System.IO.Path.GetExtension(name);var stem=entry.IsDirectory||extension.Length==0?name:name[..^extension.Length];
+                for(var suffix=2;;suffix++)
+                {
+                    var candidate=System.IO.Path.Combine(parent,$"{stem} ({suffix}){extension}");
+                    if(used.Add(candidate)){output=candidate;break;}
+                }
+            }
+            outputByIndex.Add(entry.Index,output);
+        }
+        var rootPaths=roots.Select(entry=>outputByIndex.TryGetValue(entry.Index,out var output)?output:ResolveOutput(root,entry.NormalizedPath)).ToArray();
+        var callback=new NativeMethods.ProgressCallback((total,done,_)=>
+        {
+            try{progress?.Invoke(new(total,done));return 0;}catch{return 1;}
+        });
+        var result=NativeMethods.NzDragArchive(owner,System.IO.Path.GetFullPath(archive),password,selected.Select(e=>e.Index).ToArray(),selected.Select(e=>outputByIndex[e.Index]).ToArray(),(uint)selected.Count,rootPaths,(uint)rootPaths.Length,root,callback,IntPtr.Zero);
+        GC.KeepAlive(callback);Check(result,CancellationToken.None);return result==0;
+    }
+
     public Task CreateAsync(string output,IReadOnlyList<string> sources,string format="7z",int level=5,string? password=null,bool encryptNames=false,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default) => Task.Run(()=>
     {
         if(format is not ("7z" or "zip"))throw new ArgumentException(Loc.T("当前创建格式支持 7z 和 ZIP。", "Only 7z and ZIP can be created."));
@@ -140,17 +170,18 @@ public sealed class ArchiveEngine
         var root=System.IO.Path.GetFullPath(destination);Directory.CreateDirectory(root);EnsureNoReparse(root);
         // Preflight every path before creating any output, including entries hidden by directory structure.
         foreach(var entry in entries){if(entry.IsLink)throw new IOException(Loc.T($"不解压链接条目：{entry.Path}", $"Link entries are not extracted: {entry.Path}"));ResolveOutput(root,entry.Path);}
-        var completed=0;var skipped=0;
+        var completed=0;var skipped=0;var totalFiles=(ulong)entries.Count(e=>!e.IsDirectory);
         foreach(var entry in entries)
         {
             cancellation.ThrowIfCancellationRequested();
             var target=ResolveOutput(root,entry.Path);
             if(string.Equals(target,System.IO.Path.GetFullPath(archive),StringComparison.OrdinalIgnoreCase))throw new IOException(Loc.T("不能用解压内容替换源压缩包。", "Extracted content cannot replace the source archive."));
             if(entry.IsDirectory){Directory.CreateDirectory(target);continue;}
+            progress?.Report(new(totalFiles,(ulong)(completed+skipped),entry.Path));
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);EnsureNoReparse(System.IO.Path.GetDirectoryName(target)!);
             if(File.Exists(target))
             {
-                if(policy==ConflictPolicy.Skip){skipped++;continue;}
+                if(policy==ConflictPolicy.Skip){skipped++;progress?.Report(new(totalFiles,(ulong)(completed+skipped),entry.Path));continue;}
                 if(policy==ConflictPolicy.Rename)target=UniqueName(target);
             }
             var drive=new DriveInfo(System.IO.Path.GetPathRoot(root)!);
@@ -166,7 +197,7 @@ public sealed class ArchiveEngine
                 if(File.Exists(target)&&File.GetAttributes(target).HasFlag(FileAttributes.ReparsePoint))throw new IOException(Loc.T("目标文件是重解析点，已停止写入。", "The target file is a reparse point; writing stopped."));
                 File.Move(temp,target,policy==ConflictPolicy.Replace);completed++;
                 if(entry.FileTime>0)File.SetLastWriteTimeUtc(target,DateTime.FromFileTimeUtc(entry.FileTime));
-                progress?.Report(new((ulong)entries.Count,(ulong)(completed+skipped)));
+                progress?.Report(new(totalFiles,(ulong)(completed+skipped),entry.Path));
             }
             finally { if(File.Exists(temp))File.Delete(temp); }
         }

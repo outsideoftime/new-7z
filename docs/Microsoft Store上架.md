@@ -36,10 +36,14 @@ pwsh -File scripts/build-msix.ps1 -RequireStoreIdentity
 在 Partner Center 的提交页面填写：
 
 - **包**：上传 `.msixupload`
-- **商店列表**：截图（仓库 `docs/app-screenshots` 可直接使用）、描述、分类（实用程序）
+- **商店列表**：截图（按提交时的实际界面自行准备）、描述、分类（实用程序）
 - **系统要求**：Windows 11 x64（包清单里 MinVersion 已限定 10.0.22000）
 - **年龄分级**、**隐私政策**：使用仓库中的 [PRIVACY.md](../PRIVACY.md)，页面地址为 `https://github.com/outsideoftime/new-7z/blob/main/PRIVACY.md`；也可以在提交表单中选择「提供隐私策略文本」直接粘贴正文
 - **定价**：免费
+
+认证报告曾指出产品描述前两行未披露 `.NET Desktop Runtime`。每次提交时请把以下说明放在商店描述开头（即使运行时已随 MSIX 自包含，也要披露组件）：
+
+> New7z includes the .NET Desktop Runtime; no separate runtime installation is required.
 
 认证一般 1～3 个工作日。通过后微软会重新签名，无需自备代码签名证书。
 
@@ -62,6 +66,6 @@ pwsh -File scripts/build-msix.ps1 -RequireStoreIdentity
 
 ## 已知限制
 
-- **右键菜单的注册表豁免**：MSIX 默认会把应用写入的 HKCU 放进包私有副本，资源管理器里的壳扩展看不到。清单里对 `HKCU\Software\New7z` 和 `HKCU\Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked` 申请了不虚拟化（Windows 11 的定向豁免），并声明 `unvirtualizedResources` 受限能力。提交认证时如果审核员询问，说明用途：右键菜单设置需要在包外可见。
+- **右键菜单设置的 `unvirtualizedResources` 受限能力**：Partner Center 于 2026-11-09 拒绝了当前请求。若保留此功能并申请复议，需在 Partner Center 补充有效的支持联系方式或开发者网站，并明确说明：应用设置与打包的 Explorer COM 菜单处理程序需要共享 `HKCU\\Software\\New7z` 的命令开关和自动关闭偏好；该豁免仅限应用自身键值，不读写其他应用数据。若不申请复议，则需先移除该能力及相应虚拟化排除，并改造设置与菜单处理程序的数据共享后再提交。
 - **设置不迁移**：从安装包版本切换到 Store 版本时，主题、语言、最近使用记录不会自动带过去（两者目录相同但 Store 版首次运行使用自己的默认值）。
 - **本地安装测试**：安装未签名的 `.msix` 需要开启开发者模式并用自签名证书，或直接把包上传到 Partner Center 用其测试通道验证。

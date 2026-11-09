@@ -18,6 +18,9 @@ public sealed partial class MainWindow
         {
             SelectPage("settings");Root.UpdateLayout();
             report["Settings"]="rendered native menu, association and popup controls";
+            jobs.Add(new ArchiveJob("verification job","verification target"){Status="verification",Active=false});
+            SelectPage("tasks");Root.UpdateLayout();
+            report["Tasks"]="rendered a bound task card";
             await OpenArchiveAsync(input,false);
             if(archive==null||entries.Count==0)throw new IOException("Archive UI did not load.");
             var firstDirectory=entries.FirstOrDefault(e=>e.IsDirectory);

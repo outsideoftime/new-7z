@@ -12,6 +12,11 @@ internal static class NativeMethods
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzList(string path, string? password, out IntPtr json, ProgressCallback progress, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzExtract(string path, string? password, uint index, string? output, ulong limit, out IntPtr data, out ulong size, ProgressCallback progress, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzTest(string path, string? password, ProgressCallback progress, IntPtr context);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzDragArchive(IntPtr owner,string archive,string? password,
+        [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.U4,SizeParamIndex=5)] uint[] indices,
+        [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=5)] string[] outputPaths,uint count,
+        [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=7)] string[] roots,uint rootCount,string tempPath,
+        ProgressCallback progress,IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzCreate(string path, int zip, int level, string? password, int encryptNames,
         [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=7)] string[] paths,
         [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=7)] string[] names, uint count, ProgressCallback progress, IntPtr context);

@@ -2,4 +2,9 @@
   <!-- XAML's runtime bindings and request/settings models must remain available. -->
   <assembly fullname="New7z.App" preserve="all" />
   <assembly fullname="New7z.Core" preserve="all" />
+  <!-- CsWinRT resolves ABI helper types (for example the INotifyPropertyChanged
+       helper used when XAML marshals a bound object as DataContext) through
+       reflection, so trimming this assembly removes types nothing references
+       statically and turns ordinary binding into a crash. -->
+  <assembly fullname="WinRT.Runtime" preserve="all" />
 </linker>

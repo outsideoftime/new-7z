@@ -76,6 +76,8 @@ public sealed partial class MainWindow
             popupFeedback.IsOpen=true;
         };
         UpdateDirty();panel.Children.Add(Card(section));panel.Children.Add(Card(popup));
+        if(!AppEnvironment.IsPackaged)
+        {
         var system=Stack(14);system.Children.Add(Text(T("Windows 自带压缩菜单","Windows built-in compress menu"),18,true));
         var systemStore=new WindowsCompressMenuSettingsStore();
         var hideSystemMenu=new ToggleSwitch{Header=T("隐藏 Windows「压缩到」菜单","Hide the Windows \"Compress to\" menu"),IsOn=saved.HideWindowsCompressMenu,OnContent=T("隐藏","Hidden"),OffContent=T("显示","Visible")};system.Children.Add(hideSystemMenu);
@@ -112,6 +114,7 @@ public sealed partial class MainWindow
             finally{changingSystemMenu=false;hideSystemMenu.IsEnabled=true;systemFeedback.IsOpen=true;}
         };
         panel.Children.Add(Card(system));
+        }
         if(AppEnvironment.IsPackaged)AddPackagedAssociationSettings(panel);else AddAssociationSettings(panel);
     }
 }

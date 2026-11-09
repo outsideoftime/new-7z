@@ -30,13 +30,20 @@ function Send-Request([string]$Action,[string[]]$Paths,[string]$Expected){
  $windowChecks.Add([pscustomobject]@{Action=$Action;ProcessId=$taskProcess.Id;WindowTitle=$taskProcess.MainWindowTitle})
 }
 try{
-$zip=Join-Path $folder '归档.zip'
+$zip=Join-Path $folder ((Split-Path $folder -Leaf)+'.zip')
 Send-Request 'create-zip' @($first,$second) $zip
-$out=Join-Path $folder '归档'
+$out=Join-Path $folder ([IO.Path]::GetFileNameWithoutExtension($zip))
 Send-Request 'extract-named' @($zip) (Join-Path $out '中文 B.txt')
 foreach($source in @($first,$second)){
  $result=Join-Path $out (Split-Path $source -Leaf)
  if((Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $result).Hash){throw "Roundtrip mismatch: $source"}
 }
-[pscustomobject]@{Result='PASS';Checks='Multi-file ZIP creation, Unicode and spaces, named-folder extraction, SHA-256 roundtrip, request consumption, standalone task windows';Windows=$windowChecks;FixtureFolder=$folder} | ConvertTo-Json -Depth 4 | Tee-Object -FilePath "$projectRoot/docs/shell-integration.json"
+$folders=Join-Path $folder 'folders'
+$alpha=Join-Path $folders 'Alpha';$beta=Join-Path $folders 'Beta'
+New-Item -ItemType Directory -Path $alpha,$beta -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $alpha 'a.txt') -Value 'Folder A.' -Encoding utf8
+Set-Content -LiteralPath (Join-Path $beta 'b.txt') -Value 'Folder B.' -Encoding utf8
+$multi=Join-Path $folders 'folders.zip'
+Send-Request 'create-zip' @($alpha,$beta) $multi
+[pscustomobject]@{Result='PASS';Checks='Multi-file ZIP creation, Unicode and spaces, common-parent archive naming for multiple folders, named-folder extraction, SHA-256 roundtrip, request consumption, standalone task windows';Windows=$windowChecks;FixtureFolder=$folder} | ConvertTo-Json -Depth 4 | Tee-Object -FilePath "$projectRoot/docs/shell-integration.json"
 }finally{foreach($process in $taskProcesses){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id -ErrorAction SilentlyContinue}}}

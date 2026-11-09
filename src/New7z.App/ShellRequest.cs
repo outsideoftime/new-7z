@@ -42,10 +42,38 @@ internal static class ShellPaths
             result=System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path)!,System.IO.Path.GetFileNameWithoutExtension(path)+$" ({i})"+System.IO.Path.GetExtension(path));
         reserved?.Add(result);return result;
     }
-    public static string CreateTarget(ShellRequest request,string format)
+    public static string SuggestedName(IReadOnlyList<string> paths)
     {
-        var first=request.Paths[0];var parent=System.IO.Path.GetDirectoryName(first)!;
-        var name=request.Paths.Length>1?T("归档","Archive"):Directory.Exists(first)?System.IO.Path.GetFileName(first.TrimEnd('\\','/')):System.IO.Path.GetFileNameWithoutExtension(first);
-        return UniqueOutput(System.IO.Path.Combine(parent,name+"."+format));
+        if(paths.Count==0)return T("归档","Archive");
+        if(paths.Count>1)return CommonParentName(paths)??T("归档","Archive");
+        var first=paths[0];
+        var name=Directory.Exists(first)?System.IO.Path.GetFileName(first.TrimEnd('\\','/')):System.IO.Path.GetFileNameWithoutExtension(first);
+        return string.IsNullOrWhiteSpace(name)?T("归档","Archive"):name;
+    }
+    public static string SuggestedFolder(IReadOnlyList<string> paths)=>paths.Count==0?Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments):ParentOf(paths[0]);
+    public static string CreateTarget(ShellRequest request,string format)=>UniqueOutput(System.IO.Path.Combine(SuggestedFolder(request.Paths),SuggestedName(request.Paths)+"."+format));
+    private static string ParentOf(string path)
+    {
+        var full=System.IO.Path.GetFullPath(path);
+        var trimmed=full.TrimEnd(System.IO.Path.DirectorySeparatorChar,System.IO.Path.AltDirectorySeparatorChar);
+        return System.IO.Path.GetDirectoryName(trimmed) is {Length:>0} parent?parent:full;
+    }
+    private static string? CommonParentName(IReadOnlyList<string> paths)
+    {
+        var common=ParentOf(paths[0]);
+        foreach(var path in paths.Skip(1))
+        {
+            var candidate=ParentOf(path);
+            while(common.Length>0&&!IsSameOrParent(common,candidate))common=System.IO.Path.GetDirectoryName(common)??"";
+            if(common.Length==0)return null;
+        }
+        var name=System.IO.Path.GetFileName(common.TrimEnd(System.IO.Path.DirectorySeparatorChar,System.IO.Path.AltDirectorySeparatorChar));
+        return string.IsNullOrWhiteSpace(name)?null:name;
+    }
+    private static bool IsSameOrParent(string parent,string child)
+    {
+        if(string.Equals(parent,child,StringComparison.OrdinalIgnoreCase))return true;
+        var prefix=parent.EndsWith(System.IO.Path.DirectorySeparatorChar)?parent:parent+System.IO.Path.DirectorySeparatorChar;
+        return child.StartsWith(prefix,StringComparison.OrdinalIgnoreCase);
     }
 }

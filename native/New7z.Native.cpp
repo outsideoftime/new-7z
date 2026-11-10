@@ -4,6 +4,7 @@
 #include <oleauto.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <urlmon.h>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -23,6 +24,9 @@ static Creator createObject=nullptr;
 static HandlerProp getHandlerProp=nullptr;
 static std::mutex initMutex;
 thread_local std::wstring errorText;
+thread_local std::wstring dragDiagnostics;
+
+static void traceDrag(const wchar_t* event,DWORD value) noexcept{try{if(dragDiagnostics.size()<4096)dragDiagnostics+=std::wstring(event)+L"="+std::to_wstring(value)+L"\n";}catch(...){}}
 #define API extern "C" __declspec(dllexport)
 #define METHOD(name, args) HRESULT STDMETHODCALLTYPE name args noexcept override
 #define REFS \
@@ -163,12 +167,26 @@ public:
 class DragDataObject final:public IDataObject {
   std::atomic<ULONG> refs{1};
   std::wstring archivePath,password,tempPath;std::vector<UInt32> indices;std::vector<std::wstring> outputPaths,rootPaths;
-  Progress progress;void* context;bool dropped=false,prepared=false;HRESULT preparationResult=S_OK;
-  std::vector<FORMATETC> formats;
+  Progress progress;void* context;bool dropCommitted=false,prepared=false,frameworkDrag;HRESULT preparationResult=S_OK;
+  HWND owner;std::wstring preparationTitle;std::unordered_map<CLIPFORMAT,STGMEDIUM> shellFormats;
+  struct PreparationProgress {
+    Progress callback;void* context;Ptr<IProgressDialog> dialog;
+    ~PreparationProgress(){if(dialog.p)dialog->StopProgressDialog();}
+    static int __cdecl report(UInt64 total,UInt64 done,void* context){
+      auto& state=*static_cast<PreparationProgress*>(context);
+      if(state.dialog.p){state.dialog->SetProgress64(done,total);if(state.dialog->HasUserCancelled())return 1;}
+      return state.callback?state.callback(total,done,state.context):0;
+    }
+  };
   HRESULT prepare(){
-    if(prepared)return preparationResult;prepared=true;
+    if(prepared)return preparationResult;prepared=true;preparationResult=E_PENDING;
     try{
-      Archive a(password.c_str(),progress,context);HRESULT hr=a.open(archivePath.c_str());if(FAILED(hr))return preparationResult=hr;
+      PreparationProgress state{progress,context};
+      if(owner&&SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(state.dialog.out())))){
+        state.dialog->SetTitle(preparationTitle.c_str());state.dialog->SetLine(1,archivePath.c_str(),TRUE,nullptr);
+        state.dialog->StartProgressDialog(owner,nullptr,PROGDLG_AUTOTIME|PROGDLG_NOMINIMIZE,nullptr);
+      }
+      Archive a(password.c_str(),PreparationProgress::report,&state);HRESULT hr=a.open(archivePath.c_str());if(FAILED(hr))return preparationResult=hr;
       UInt32 itemCount=0;if(FAILED(hr=a.archive->GetNumberOfItems(&itemCount)))return preparationResult=hr;
       if(indices.empty()||indices.size()!=outputPaths.size()||indices.size()>1000000||rootPaths.empty())return preparationResult=E_INVALIDARG;
       std::unordered_map<UInt32,DragItem> items;items.reserve(indices.size());
@@ -178,7 +196,10 @@ class DragDataObject final:public IDataObject {
         DragItem item{indices[i],outputPaths[i],propBool(directory.v),std::max<UInt64>(number(size.v),1)};
         if(!items.emplace(item.index,item).second)return preparationResult=E_INVALIDARG;
         const std::wstring directoryPath=item.directory?item.path:item.path.substr(0,item.path.find_last_of(L"\\/"));
-        if(directoryPath.empty()||!isWithinDirectory(tempPath,directoryPath)||!ensureDirectory(directoryPath))return preparationResult=HRESULT_FROM_WIN32(GetLastError());
+        // A file at the archive root has tempPath itself as its parent.
+        // Path validation errors must not use a stale (possibly zero) GetLastError.
+        if(directoryPath.empty()||(_wcsicmp(tempPath.c_str(),directoryPath.c_str())!=0&&!isWithinDirectory(tempPath,directoryPath)))return preparationResult=E_INVALIDARG;
+        if(!ensureDirectory(directoryPath)){DWORD error=GetLastError();return preparationResult=error?HRESULT_FROM_WIN32(error):E_FAIL;}
       }
       for(const auto& root:rootPaths)if(!isWithinDirectory(tempPath,root))return preparationResult=E_INVALIDARG;
       Ptr<DragExtractCallback> callback;callback.p=new DragExtractCallback(a.status,items);
@@ -190,31 +211,64 @@ class DragDataObject final:public IDataObject {
     }catch(...){return preparationResult=E_OUTOFMEMORY;}
   }
 public:
-  DragDataObject(const wchar_t* archive,const wchar_t* password,const wchar_t* temp,const UInt32* itemIndices,const wchar_t* const* outputs,UInt32 count,const wchar_t* const* roots,UInt32 rootCount,Progress cb,void* ctx)
-    :archivePath(archive),password(password?password:L""),tempPath(temp),indices(itemIndices,itemIndices+count),progress(cb),context(ctx){
+  DragDataObject(const wchar_t* archive,const wchar_t* password,const wchar_t* temp,const UInt32* itemIndices,const wchar_t* const* outputs,UInt32 count,const wchar_t* const* roots,UInt32 rootCount,Progress cb,void* ctx,HWND window=nullptr,const wchar_t* title=L"New7z",bool useFrameworkDrag=false)
+    :archivePath(archive),password(password?password:L""),tempPath(temp),indices(itemIndices,itemIndices+count),progress(cb),context(ctx),frameworkDrag(useFrameworkDrag),owner(window),preparationTitle(title?title:L"New7z"){
     outputPaths.reserve(count);for(UInt32 i=0;i<count;i++)outputPaths.emplace_back(outputs[i]);
     rootPaths.reserve(rootCount);for(UInt32 i=0;i<rootCount;i++)rootPaths.emplace_back(roots[i]);
-    formats.push_back({CF_HDROP,nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL});
   }
+  ~DragDataObject(){for(auto& item:shellFormats)ReleaseStgMedium(&item.second);}
   ULONG STDMETHODCALLTYPE AddRef() noexcept override{return ++refs;}
   ULONG STDMETHODCALLTYPE Release() noexcept override{auto n=--refs;if(!n)delete this;return n;}
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) noexcept override{*out=nullptr;if(iid==IID_IUnknown||iid==IID_IDataObject)*out=static_cast<IDataObject*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
   HRESULT STDMETHODCALLTYPE GetData(FORMATETC* format,STGMEDIUM* medium) noexcept override{
-    if(!format||!medium)return E_INVALIDARG;HRESULT hr=QueryGetData(format);if(FAILED(hr))return hr;
-    try{std::vector<std::wstring> paths;if(dropped){hr=prepare();if(FAILED(hr))return hr;paths=rootPaths;}else paths.push_back(tempPath);return makeDropFiles(paths,medium);}catch(...){return E_OUTOFMEMORY;}
+    if(!format||!medium)return E_INVALIDARG;*medium={};HRESULT hr=QueryGetData(format);if(FAILED(hr))return hr;
+    if(format->cfFormat!=CF_HDROP){
+      return CopyStgMedium(&shellFormats.at(format->cfFormat),medium);
+    }
+    // Match 7-Zip PanelDrag.cpp: hover exposes an existing temporary directory,
+    // without opening/decompressing the archive. Upstream commits final names
+    // from QueryContinueDrag on release. WinUI owns that source here, so physical
+    // release gates delayed rendering while it tracks the pointer and cursor.
+    if(frameworkDrag&&!(GetAsyncKeyState(VK_LBUTTON)&0x8000))dropCommitted=true;
+    traceDrag(L"GetData.committed",dropCommitted);
+    if(!dropCommitted)return makeDropFiles({tempPath},medium);
+    hr=prepare();if(FAILED(hr))return hr;return makeDropFiles(rootPaths,medium);
   }
   HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*,STGMEDIUM*) noexcept override{return DATA_E_FORMATETC;}
   HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* format) noexcept override{
-    if(!format)return E_INVALIDARG;if(format->cfFormat!=CF_HDROP)return DV_E_FORMATETC;if(format->dwAspect!=DVASPECT_CONTENT)return DV_E_DVASPECT;if(!(format->tymed&TYMED_HGLOBAL))return DV_E_TYMED;return S_OK;
+    if(!format)return E_INVALIDARG;if(format->dwAspect!=DVASPECT_CONTENT)return DV_E_DVASPECT;
+    if(format->cfFormat==CF_HDROP)return (format->tymed&TYMED_HGLOBAL)?S_OK:DV_E_TYMED;
+    auto item=shellFormats.find(format->cfFormat);if(item==shellFormats.end())return DV_E_FORMATETC;
+    return (format->tymed&item->second.tymed)?S_OK:DV_E_TYMED;
   }
   HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*,FORMATETC* output) noexcept override{if(!output)return E_INVALIDARG;output->ptd=nullptr;return DATA_S_SAMEFORMATETC;}
-  HRESULT STDMETHODCALLTYPE SetData(FORMATETC*,STGMEDIUM*,BOOL) noexcept override{return E_NOTIMPL;}
+  HRESULT STDMETHODCALLTYPE SetData(FORMATETC* format,STGMEDIUM* medium,BOOL release) noexcept override{
+    if(!format||!medium)return E_INVALIDARG;
+    if(format->cfFormat==CF_HDROP)return DV_E_FORMATETC;
+    if(format->dwAspect!=DVASPECT_CONTENT)return DV_E_DVASPECT;
+    if(!(format->tymed&medium->tymed)||!medium->hGlobal)return DV_E_TYMED;
+    STGMEDIUM stored=*medium;
+    if(!release){stored={};HRESULT hr=CopyStgMedium(medium,&stored);if(FAILED(hr))return hr;}
+    try{auto item=shellFormats.try_emplace(format->cfFormat,STGMEDIUM{}).first;ReleaseStgMedium(&item->second);item->second=stored;return S_OK;}
+    catch(...){if(!release)ReleaseStgMedium(&stored);return E_OUTOFMEMORY;}
+  }
   HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD direction,IEnumFORMATETC** out) noexcept override;
   HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC*,DWORD,IAdviseSink*,DWORD*) noexcept override{return OLE_E_ADVISENOTSUPPORTED;}
   HRESULT STDMETHODCALLTYPE DUnadvise(DWORD) noexcept override{return OLE_E_ADVISENOTSUPPORTED;}
   HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA** out) noexcept override{if(out)*out=nullptr;return OLE_E_ADVISENOTSUPPORTED;}
-  void markDropped(){dropped=true;}
   HRESULT result()const{return preparationResult;}
+  void commitDrop(){dropCommitted=true;}
+  bool wasTransferred(DWORD effect)const{
+    if(effect&(DROPEFFECT_COPY|DROPEFFECT_MOVE))return true;
+    // Explorer can report an optimized move through SetData and return effect 0.
+    for(auto name:{CFSTR_PERFORMEDDROPEFFECT,CFSTR_LOGICALPERFORMEDDROPEFFECT}){
+      auto item=shellFormats.find(static_cast<CLIPFORMAT>(RegisterClipboardFormatW(name)));
+      if(item==shellFormats.end()||item->second.tymed!=TYMED_HGLOBAL||GlobalSize(item->second.hGlobal)<sizeof(DWORD))continue;
+      auto value=static_cast<const DWORD*>(GlobalLock(item->second.hGlobal));if(!value)continue;
+      bool transferred=(*value&(DROPEFFECT_COPY|DROPEFFECT_MOVE))!=0;GlobalUnlock(item->second.hGlobal);if(transferred)return true;
+    }
+    return false;
+  }
 };
 class DragFormatEnumerator final:public IEnumFORMATETC {
   std::atomic<ULONG> refs{1};UINT position=0;FORMATETC format{CF_HDROP,nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL};
@@ -228,16 +282,6 @@ public:
   HRESULT STDMETHODCALLTYPE Clone(IEnumFORMATETC** out) noexcept override{if(!out)return E_POINTER;auto clone=new(std::nothrow) DragFormatEnumerator();if(!clone)return E_OUTOFMEMORY;clone->position=position;*out=clone;return S_OK;}
 };
 HRESULT DragDataObject::EnumFormatEtc(DWORD direction,IEnumFORMATETC** out) noexcept{if(!out)return E_POINTER;*out=nullptr;if(direction!=DATADIR_GET)return E_NOTIMPL;auto enumerator=new(std::nothrow) DragFormatEnumerator();if(!enumerator)return E_OUTOFMEMORY;*out=enumerator;return S_OK;}
-class DragDropSource final:public IDropSource {
-  std::atomic<ULONG> refs{1};DragDataObject* data;DWORD effect=DROPEFFECT_NONE;
-public:
-  explicit DragDropSource(DragDataObject* object):data(object){}
-  ULONG STDMETHODCALLTYPE AddRef() noexcept override{return ++refs;}
-  ULONG STDMETHODCALLTYPE Release() noexcept override{auto n=--refs;if(!n)delete this;return n;}
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) noexcept override{*out=nullptr;if(iid==IID_IUnknown||iid==IID_IDropSource)*out=static_cast<IDropSource*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
-  HRESULT STDMETHODCALLTYPE QueryContinueDrag(BOOL escape,DWORD keys) noexcept override{if(escape)return DRAGDROP_S_CANCEL;if(keys&MK_LBUTTON)return S_OK;if(effect==DROPEFFECT_NONE)return DRAGDROP_S_CANCEL;data->markDropped();return DRAGDROP_S_DROP;}
-  HRESULT STDMETHODCALLTYPE GiveFeedback(DWORD value) noexcept override{effect=value&DROPEFFECT_COPY;return DRAGDROP_S_USEDEFAULTCURSORS;}
-};
 static HRESULT fillNewItemProperty(const wchar_t* path,const wchar_t* name,PROPID prop,PROPVARIANT* value){
   PropVariantInit(value);WIN32_FILE_ATTRIBUTE_DATA info;
   if(!GetFileAttributesExW(path,GetFileExInfoStandard,&info))return HRESULT_FROM_WIN32(GetLastError());
@@ -279,25 +323,25 @@ public:
 };
 API int __cdecl NzInitialize(const wchar_t* path){std::lock_guard<std::mutex> lock(initMutex);if(engine)return S_OK;engine=LoadLibraryExW(path,nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);if(!engine)return HRESULT_FROM_WIN32(GetLastError());createObject=reinterpret_cast<Creator>(GetProcAddress(engine,"CreateObject"));getHandlerProp=reinterpret_cast<HandlerProp>(GetProcAddress(engine,"GetHandlerProperty2"));return createObject&&getHandlerProp?S_OK:E_FAIL;}
 API void __cdecl NzFree(void* ptr){CoTaskMemFree(ptr);}
-API int __cdecl NzDragArchive(HWND owner,const wchar_t* archive,const wchar_t* password,const UInt32* indices,const wchar_t* const* outputPaths,UInt32 count,const wchar_t* const* roots,UInt32 rootCount,const wchar_t* temp,Progress progress,void* ctx){
-  if(!archive||!indices||!outputPaths||!count||count>1000000||!roots||!rootCount||rootCount>1000000||!temp)return E_INVALIDARG;
-  HRESULT initialized=OleInitialize(nullptr);if(FAILED(initialized))return initialized;
-  int result=S_OK;
+API void __cdecl NzGetDragDiagnostics(wchar_t** output){*output=nullptr;size_t bytes=(dragDiagnostics.size()+1)*sizeof(wchar_t);*output=static_cast<wchar_t*>(CoTaskMemAlloc(bytes));if(*output)memcpy(*output,dragDiagnostics.c_str(),bytes);}
+API int __cdecl NzCreateArchiveDragData(IUnknown* package,HWND owner,const wchar_t* archive,const wchar_t* password,const UInt32* indices,const wchar_t* const* outputPaths,UInt32 count,const wchar_t* const* roots,UInt32 rootCount,const wchar_t* temp,const wchar_t* preparationTitle,DragDataObject** session){
+  if(!session)return E_POINTER;*session=nullptr;
+  if(!package||!archive||!indices||!outputPaths||!count||count>1000000||!roots||!rootCount||rootCount>1000000||!temp)return E_INVALIDARG;
+  dragDiagnostics.clear();
   try{
-    Ptr<DragDataObject> data;data.p=new DragDataObject(archive,password,temp,indices,outputPaths,count,roots,rootCount,progress,ctx);
-    Ptr<DragDropSource> source;source.p=new DragDropSource(data.p);
-    DWORD effect=DROPEFFECT_NONE;HRESULT hr=DoDragDrop(data.p,source.p,DROPEFFECT_COPY,&effect);
-    if(FAILED(data->result()))result=data->result();
-    else if(hr==DRAGDROP_S_DROP&&(effect&DROPEFFECT_COPY))result=S_OK;
-    else if(FAILED(hr))result=hr;
-    else result=S_FALSE;
-  }catch(...){result=E_OUTOFMEMORY;}
-  OleUninitialize();return result;
+    Ptr<IDataObjectProvider> provider;HRESULT hr=package->QueryInterface(IID_PPV_ARGS(provider.out()));if(FAILED(hr))return hr;
+    Ptr<DragDataObject> data;data.p=new DragDataObject(archive,password,temp,indices,outputPaths,count,roots,rootCount,nullptr,nullptr,owner,preparationTitle,true);
+    hr=provider->SetDataObject(data.p);if(FAILED(hr))return hr;
+    *session=data.p;data.p=nullptr;return S_OK;
+  }catch(...){return E_OUTOFMEMORY;}
 }
+API int __cdecl NzArchiveDragResult(DragDataObject* session){return session?session->result():E_POINTER;}
+API int __cdecl NzArchiveDragWasTransferred(DragDataObject* session){return session&&session->wasTransferred(DROPEFFECT_NONE)?1:0;}
+API void __cdecl NzReleaseArchiveDragData(DragDataObject* session){if(session)session->Release();}
 API int __cdecl NzList(const wchar_t* path,const wchar_t* password,wchar_t** json,Progress progress,void* ctx){*json=nullptr;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;UInt32 count=0;if(FAILED(hr=a.archive->GetNumberOfItems(&count)))return hr;if(count>1000000)return SizeLimit;std::wstring text=L"[";for(UInt32 i=0;i<count;i++){if(FAILED(a.status.report(i)))return E_ABORT;Variant name,size,packed,dir,encrypted,time,link,hard,attrs;a.archive->GetProperty(i,kpidPath,&name.v);a.archive->GetProperty(i,kpidSize,&size.v);a.archive->GetProperty(i,kpidPackSize,&packed.v);a.archive->GetProperty(i,kpidIsDir,&dir.v);a.archive->GetProperty(i,kpidEncrypted,&encrypted.v);a.archive->GetProperty(i,kpidMTime,&time.v);a.archive->GetProperty(i,kpidSymLink,&link.v);a.archive->GetProperty(i,kpidHardLink,&hard.v);a.archive->GetProperty(i,kpidAttrib,&attrs.v);if(i)text+=L",";UInt64 ft=time.v.vt==VT_FILETIME?(UInt64(time.v.filetime.dwHighDateTime)<<32)|time.v.filetime.dwLowDateTime:0;text+=L"{\"Index\":"+std::to_wstring(i)+L",\"Path\":"+quote(name.v.vt==VT_BSTR?name.v.bstrVal:L"content")+L",\"Size\":"+std::to_wstring(number(size.v))+L",\"PackedSize\":"+(packed.v.vt==VT_EMPTY?L"null":std::to_wstring(number(packed.v)))+L",\"IsDirectory\":"+(propBool(dir.v)?L"true":L"false")+L",\"Encrypted\":"+(propBool(encrypted.v)?L"true":L"false")+L",\"IsLink\":"+((link.v.vt==VT_BSTR||hard.v.vt==VT_BSTR||(number(attrs.v)&FILE_ATTRIBUTE_REPARSE_POINT))?L"true":L"false")+L",\"FileTime\":"+std::to_wstring(ft)+L"}";}text+=L"]";const auto n=(text.size()+1)*sizeof(wchar_t);*json=static_cast<wchar_t*>(CoTaskMemAlloc(n));if(!*json)return E_OUTOFMEMORY;memcpy(*json,text.c_str(),n);return S_OK;}catch(...){return E_OUTOFMEMORY;}}
 API int __cdecl NzExtract(const wchar_t* path,const wchar_t* password,UInt32 index,const wchar_t* output,UInt64 limit,unsigned char** data,UInt64* size,Progress progress,void* ctx){if(data)*data=nullptr;if(size)*size=0;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Variant property;a.archive->GetProperty(index,kpidSize,&property.v);if(number(property.v)>limit)return SizeLimit;Ptr<Output> stream;stream.p=new Output(output,limit);if(!stream->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,stream.p);hr=a.archive->Extract(&index,1,0,callback.p);if(FAILED(hr))return a.status.passwordAsked&&hr!=E_ABORT?PasswordRequired:hr;if(FAILED(callback->result))return callback->result;if(!output&&data&&size){*size=stream->bytes.size();*data=static_cast<unsigned char*>(CoTaskMemAlloc(size_t(*size?*size:1)));if(!*data)return E_OUTOFMEMORY;if(*size)memcpy(*data,stream->bytes.data(),size_t(*size));}return S_OK;}catch(...){return E_OUTOFMEMORY;}}
 API int __cdecl NzTest(const wchar_t* path,const wchar_t* password,Progress progress,void* ctx){try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,nullptr);hr=a.archive->Extract(nullptr,UInt32(-1),1,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
-API int __cdecl NzCreate(const wchar_t* path,int zip,int level,const wchar_t* password,int encryptNames,const wchar_t* const* paths,const wchar_t* const* names,UInt32 count,Progress progress,void* ctx){try{if(!createObject)return E_UNEXPECTED;GUID cls={0x23170F69,0x40C1,0x278A,{0x10,0,0,1,0x10,BYTE(zip?1:7),0,0}};Ptr<IOutArchive> archive;HRESULT hr=createObject(&cls,&IID_IOutArchive,reinterpret_cast<void**>(archive.out()));if(FAILED(hr))return hr;Ptr<ISetProperties> props;if(SUCCEEDED(archive->QueryInterface(IID_ISetProperties,reinterpret_cast<void**>(props.out())))){const wchar_t* keys[]={L"x",L"he",L"em"};PROPVARIANT values[3]{};values[0].vt=VT_UI4;values[0].ulVal=level;values[1].vt=VT_BOOL;values[1].boolVal=encryptNames?VARIANT_TRUE:VARIANT_FALSE;values[2].vt=VT_BSTR;values[2].bstrVal=SysAllocString(L"AES256");if(zip){const wchar_t* zipKeys[]={keys[0],keys[2]};PROPVARIANT zipValues[]={values[0],values[2]};hr=props->SetProperties(zipKeys,zipValues,password&&*password?2:1);}else hr=props->SetProperties(keys,values,password&&*password?2:1);PropVariantClear(&values[2]);if(FAILED(hr))return hr;}Status status(password,progress,ctx);Ptr<Output> output;output.p=new Output(path,UINT64_MAX);if(!output->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<UpdateCallback> callback;callback.p=new UpdateCallback(status,paths,names);hr=archive->UpdateItems(output.p,count,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
+API int __cdecl NzCreate(const wchar_t* path,int format,int level,const wchar_t* method,const wchar_t* password,int encryptNames,const wchar_t* const* paths,const wchar_t* const* names,UInt32 count,Progress progress,void* ctx){try{if(!createObject)return E_UNEXPECTED;if(format<0||format>2)return E_INVALIDARG;const BYTE handler=format==1?1:format==2?0xEE:7;GUID cls={0x23170F69,0x40C1,0x278A,{0x10,0,0,1,0x10,handler,0,0}};Ptr<IOutArchive> archive;HRESULT hr=createObject(&cls,&IID_IOutArchive,reinterpret_cast<void**>(archive.out()));if(FAILED(hr))return hr;Ptr<ISetProperties> props;if(SUCCEEDED(archive->QueryInterface(IID_ISetProperties,reinterpret_cast<void**>(props.out())))){const wchar_t* keys[4];PROPVARIANT values[4]{};UInt32 n=0;keys[n]=L"x";values[n].vt=VT_UI4;values[n].ulVal=level;n++;if(format!=2&&method&&*method){keys[n]=format==1?L"m":L"0";if(format==1&&_wcsicmp(method,L"Copy")==0){values[n].vt=VT_UI4;values[n].ulVal=0;}else{values[n].vt=VT_BSTR;values[n].bstrVal=SysAllocString(method);}n++;}if(password&&*password){if(format==1){keys[n]=L"em";values[n].vt=VT_BSTR;values[n].bstrVal=SysAllocString(L"AES256");n++;}else if(format==0){keys[n]=L"he";values[n].vt=VT_BOOL;values[n].boolVal=encryptNames?VARIANT_TRUE:VARIANT_FALSE;n++;}}hr=props->SetProperties(keys,values,n);for(UInt32 i=0;i<n;i++)PropVariantClear(&values[i]);if(FAILED(hr))return hr;}Status status(password,progress,ctx);Ptr<Output> output;output.p=new Output(path,UINT64_MAX);if(!output->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<UpdateCallback> callback;callback.p=new UpdateCallback(status,paths,names);hr=archive->UpdateItems(output.p,count,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
 API int __cdecl NzUpdate(const wchar_t* path,const wchar_t* output,const wchar_t* password,int zip,const UInt32* removeIndices,UInt32 removeCount,const wchar_t* const* addPaths,const wchar_t* const* addNames,UInt32 addCount,Progress progress,void* ctx){
   try{
     if(!createObject)return E_UNEXPECTED;

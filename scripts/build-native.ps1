@@ -18,5 +18,5 @@ if(!$SkipEngine){
 }
 Copy-Item -LiteralPath "$source/CPP/7zip/Bundles/Format7zF/x64/7z.dll" -Destination $output -Force
 Push-Location $projectRoot
-try { & cmd /c "`"$vcvars`" >nul && cl /nologo /LD /std:c++17 /EHsc /O2 /MT /utf-8 /DUNICODE /D_UNICODE native\New7z.Native.cpp /Fo`"$output\New7z.Native.obj`" /link /OUT:`"$output\New7z.Native.dll`" /IMPLIB:`"$output\New7z.Native.lib`" ole32.lib oleaut32.lib";if($LASTEXITCODE){throw 'Native bridge build failed.'} } finally { Pop-Location }
+try { & cmd /c "`"$vcvars`" >nul && cl /nologo /LD /std:c++17 /EHsc /O2 /MT /utf-8 /DUNICODE /D_UNICODE native\New7z.Native.cpp /Fo`"$output\New7z.Native.obj`" /link /OUT:`"$output\New7z.Native.dll`" /IMPLIB:`"$output\New7z.Native.lib`" ole32.lib oleaut32.lib user32.lib shell32.lib urlmon.lib";if($LASTEXITCODE){throw 'Native bridge build failed.'} } finally { Pop-Location }
 Write-Host "Native engine: $output"

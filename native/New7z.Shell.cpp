@@ -18,14 +18,17 @@ static std::atomic<long> objects{0},locks{0};
 // Keep bit assignments in sync with New7z.Core/ExplorerPreferences.cs.
 static DWORD commandBit(const std::wstring& action){
  if(action==L"open")return 1;if(action==L"extract-named")return 2;if(action==L"extract-to")return 4;if(action==L"extract-here")return 8;
- if(action==L"test")return 16;if(action==L"create")return 32;if(action==L"create-7z")return 64;if(action==L"create-zip")return 128;return 0;
+ if(action==L"test")return 16;if(action==L"create")return 32;if(action==L"create-7z")return 64;if(action==L"create-zip")return 128;if(action==L"create-tar")return 256;return 0;
 }
 static DWORD preference(const wchar_t* name,DWORD fallback){DWORD value=0,bytes=sizeof(value);return RegGetValueW(HKEY_CURRENT_USER,L"Software\\New7z\\Explorer",name,RRF_RT_REG_DWORD,nullptr,&value,&bytes)==ERROR_SUCCESS?value:fallback;}
+static constexpr DWORD kAllCommands=511;
+// 255 was "all commands" before the TAR command existed; expand it once.
+static DWORD commands(){DWORD value=preference(L"Commands",kAllCommands),version=preference(L"CommandsVersion",0);if(value==255&&version<2)value=kAllCommands;return value&kAllCommands;}
 static std::wstring appPath(){wchar_t path[32768];GetModuleFileNameW(moduleHandle,path,32768);PathRemoveFileSpecW(path);return std::wstring(path)+L"\\New7z.App.exe";}
 static std::vector<std::wstring> getPaths(IShellItemArray* items){std::vector<std::wstring> paths;if(!items)return paths;DWORD count=0;items->GetCount(&count);if(count>10000)return paths;for(DWORD i=0;i<count;i++){IShellItem* item=nullptr;PWSTR path=nullptr;if(SUCCEEDED(items->GetItemAt(i,&item))){if(SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))){paths.emplace_back(path);CoTaskMemFree(path);}item->Release();}}return paths;}
 static bool archive(const std::wstring& path){auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY))return false;auto ext=std::wstring(PathFindExtensionW(path.c_str()));std::transform(ext.begin(),ext.end(),ext.begin(),towlower);return ext==L".7z"||ext==L".zip"||ext==L".rar"||ext==L".tar"||ext==L".gz"||ext==L".xz"||ext==L".bz2"||ext==L".iso";}
 static bool allArchives(const std::vector<std::wstring>& paths){return !paths.empty()&&std::all_of(paths.begin(),paths.end(),archive);}
-static DWORD selectionMask(const std::vector<std::wstring>& paths){if(paths.empty())return 0;return allArchives(paths)?(paths.size()==1?31:22):224;}
+static DWORD selectionMask(const std::vector<std::wstring>& paths){if(paths.empty())return 0;return allArchives(paths)?(paths.size()==1?31:22):480;}
 static std::wstring quoteJson(const std::wstring& s){std::wstring out=L"\"";for(auto c:s){if(c==L'"')out+=L"\\\"";else if(c==L'\\')out+=L"\\\\";else if(c<32){wchar_t b[8];swprintf_s(b,L"\\u%04x",unsigned(c));out+=b;}else out+=c;}return out+L"\"";}
 static HRESULT dispatch(const std::wstring& action,const std::vector<std::wstring>& paths){
  if(paths.empty())return E_INVALIDARG;
@@ -68,21 +71,21 @@ public:
   if(items)cached=getPaths(items);std::wstring text=L"New7z";
   if(action==L"open")text=L"用 New7z 打开";else if(action==L"extract-named")text=cached.size()>1?L"分别解压到各自文件夹":L"解压到同名文件夹";
   else if(action==L"extract-to")text=L"解压到…";else if(action==L"extract-here")text=L"解压到当前文件夹";else if(action==L"test")text=L"测试完整性";
-  else if(action==L"create")text=L"新建压缩包…";else if(action==L"create-7z")text=L"压缩为 7z";else if(action==L"create-zip")text=L"压缩为 ZIP";
+  else if(action==L"create")text=L"新建压缩包…";else if(action==L"create-7z")text=L"压缩为 7Z";else if(action==L"create-zip")text=L"压缩为 ZIP";else if(action==L"create-tar")text=L"压缩为 TAR";
   return SHStrDupW(text.c_str(),title);
  }
  HRESULT STDMETHODCALLTYPE GetIcon(IShellItemArray*,PWSTR* icon)override{wchar_t path[32768];GetModuleFileNameW(moduleHandle,path,32768);return SHStrDupW((std::wstring(path)+L",-101").c_str(),icon);}
  HRESULT STDMETHODCALLTYPE GetToolTip(IShellItemArray*,PWSTR* tooltip)override{return SHStrDupW(L"使用 New7z 压缩或解压文件",tooltip);}
  HRESULT STDMETHODCALLTYPE GetCanonicalName(GUID* id)override{*id=canonicalBase;id->Data1^=commandBit(action);return S_OK;}
- HRESULT STDMETHODCALLTYPE GetState(IShellItemArray* items,BOOL,EXPCMDSTATE* state)override{if(items)cached=getPaths(items);auto mask=preference(L"Commands",255)&selectionMask(cached);*state=preference(L"MenuEnabled",1)&&(action.empty()?mask!=0:(mask&commandBit(action))!=0)?ECS_ENABLED:ECS_HIDDEN;return S_OK;}
- HRESULT STDMETHODCALLTYPE Invoke(IShellItemArray* items,IBindCtx*)override{try{if(!preference(L"MenuEnabled",1)||!(preference(L"Commands",255)&commandBit(action)))return E_ACCESSDENIED;return dispatch(action,getPaths(items));}catch(...){return E_OUTOFMEMORY;}}
+ HRESULT STDMETHODCALLTYPE GetState(IShellItemArray* items,BOOL,EXPCMDSTATE* state)override{if(items)cached=getPaths(items);auto mask=commands()&selectionMask(cached);*state=preference(L"MenuEnabled",1)&&(action.empty()?mask!=0:(mask&commandBit(action))!=0)?ECS_ENABLED:ECS_HIDDEN;return S_OK;}
+ HRESULT STDMETHODCALLTYPE Invoke(IShellItemArray* items,IBindCtx*)override{try{if(!preference(L"MenuEnabled",1)||!(commands()&commandBit(action)))return E_ACCESSDENIED;return dispatch(action,getPaths(items));}catch(...){return E_OUTOFMEMORY;}}
  HRESULT STDMETHODCALLTYPE GetFlags(EXPCMDFLAGS* flags)override{*flags=action.empty()?ECF_HASSUBCOMMANDS:ECF_DEFAULT;return S_OK;}
  HRESULT STDMETHODCALLTYPE EnumSubCommands(IEnumExplorerCommand** result)override{
   *result=nullptr;if(!action.empty())return E_NOTIMPL;std::vector<IExplorerCommand*> list;
-  auto mask=preference(L"MenuEnabled",1)?preference(L"Commands",255):0;
+  auto mask=preference(L"MenuEnabled",1)?commands():0;
   auto add=[&](const wchar_t* verb){if(mask&commandBit(verb))list.push_back(new Command(verb,cached,canonicalBase));};
   if(allArchives(cached)){if(cached.size()==1)add(L"open");for(auto verb:{L"extract-named",L"extract-to"})add(verb);if(cached.size()==1)add(L"extract-here");add(L"test");}
-  else for(auto verb:{L"create",L"create-7z",L"create-zip"})add(verb);
+  else for(auto verb:{L"create",L"create-7z",L"create-zip",L"create-tar"})add(verb);
   *result=new Commands(std::move(list));return S_OK;
  }
 };

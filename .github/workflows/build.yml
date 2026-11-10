@@ -23,6 +23,9 @@ jobs:
       - name: Verify archive engine
         shell: pwsh
         run: ./scripts/test.ps1
+      - name: Verify archive drag extraction and Shell copy
+        shell: pwsh
+        run: ./scripts/test-drag-extraction.ps1
       - name: Verify native menu preferences
         shell: pwsh
         run: ./scripts/test-shell-preferences.ps1

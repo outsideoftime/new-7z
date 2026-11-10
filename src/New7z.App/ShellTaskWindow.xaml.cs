@@ -24,7 +24,7 @@ public sealed partial class ShellTaskWindow:Window
     private string? destination;
     private string[] targets=[];
     private TextBox? output;
-    private ComboBox? format,level,conflict;
+    private ComboBox? format,method,level,conflict;
     private PasswordBox? secret;
     private CheckBox? encryptNames;
     private ContentDialog? activeDialog;
@@ -120,21 +120,23 @@ public sealed partial class ShellTaskWindow:Window
         TaskScrollViewer.VerticalAlignment=VerticalAlignment.Top;
         Configuration.Visibility=Visibility.Visible;ProgressSection.Visibility=Visibility.Collapsed;
         StartButton.Visibility=Visibility.Visible;CancelButton.Content=T("取消","Cancel");
-        output=new TextBox{Header=request!.Action=="create"?T("保存为","Save as"):T("目标目录","Target folder"),Text=request.Action=="create"?ShellPaths.CreateTarget(request,"7z"):request.Action=="extract-entries"&&request.Target!=null?request.Target:System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
+        output=new TextBox{Header=request!.Action=="create"?T("保存为","Save as"):T("目标目录","Target folder"),Text=request.Action=="create"?ShellPaths.CreateTarget(request,UserSettings.NormalizeFormat(UserSettings.Load().DefaultFormat)):request.Action=="extract-entries"&&request.Target!=null?request.Target:System.IO.Path.Combine(System.IO.Path.GetDirectoryName(request.Paths[0])!,ShellPaths.ArchiveStem(request.Paths[0]))};
         if(request.Action=="extract-to"&&request.Paths.Length>1)output.Text=System.IO.Path.GetDirectoryName(request.Paths[0])!;
         Configuration.Children.Add(output);
         var browse=new Button{Content=T("选择文件夹","Choose Folder")};browse.Click+=Browse_Click;Configuration.Children.Add(browse);
         if(request.Action=="create")
         {
             StartButton.Content=T("开始压缩","Start Compression");
-            format=new ComboBox{Header=T("格式","Format"),ItemsSource=new[]{"7z","zip"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
+            format=new ComboBox{Header=T("格式","Format"),ItemsSource=new[]{"7z","zip","tar"},SelectedIndex=Math.Max(0,Array.IndexOf(new[]{"7z","zip","tar"},UserSettings.NormalizeFormat(UserSettings.Load().DefaultFormat))),HorizontalAlignment=HorizontalAlignment.Stretch};
+            method=new ComboBox{Header=T("压缩方法","Compression method"),HorizontalAlignment=HorizontalAlignment.Stretch};
             level=new ComboBox{Header=T("压缩级别","Compression Level"),ItemsSource=new[]{T("标准","Standard"),T("更快","Faster"),T("更小","Smaller")},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
             secret=new PasswordBox{Header=T("密码（可选）","Password (optional)"),PasswordRevealMode=PasswordRevealMode.Peek};
             encryptNames=new CheckBox{Content=T("加密文件名（仅 7z）","Encrypt file names (7z only)"),IsEnabled=false};
-            void UpdateEncryption(){encryptNames.IsEnabled=format.SelectedIndex==0&&secret.Password.Length>0;if(!encryptNames.IsEnabled)encryptNames.IsChecked=false;}
-            format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());UpdateEncryption();};
+            void UpdateMethods(){var code=format.SelectedItem?.ToString()??"7z";var choices=CompressionOptions.For(code);method.ItemsSource=choices;var preferred=CompressionOptions.Default(UserSettings.Load(),code);method.SelectedIndex=Math.Max(0,choices.ToList().FindIndex(item=>item.Value==preferred));method.IsEnabled=choices.Count>0;}
+            void UpdateEncryption(){var tar=format.SelectedIndex==2;if(tar)secret.Password="";secret.IsEnabled=!tar;level.IsEnabled=!tar;method.IsEnabled=!tar;encryptNames.IsEnabled=!tar&&format.SelectedIndex==0&&secret.Password.Length>0;if(!encryptNames.IsEnabled)encryptNames.IsChecked=false;}
+            format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());UpdateMethods();UpdateEncryption();};
             secret.PasswordChanged+=(_,_)=>UpdateEncryption();
-            Configuration.Children.Add(format);Configuration.Children.Add(level);Configuration.Children.Add(secret);Configuration.Children.Add(encryptNames);
+            Configuration.Children.Add(format);Configuration.Children.Add(method);Configuration.Children.Add(level);Configuration.Children.Add(secret);Configuration.Children.Add(encryptNames);UpdateMethods();UpdateEncryption();
         }
         else
         {
@@ -167,6 +169,7 @@ public sealed partial class ShellTaskWindow:Window
         catch(Exception ex){ShowMessage(T("请检查目标位置","Check the Target Location"),ex.Message,InfoBarSeverity.Error);output?.Focus(FocusState.Programmatic);}
         finally{StartButton.IsEnabled=true;}
     }
+    private static string ActionFormat(string action)=>action switch{"create-zip"=>"zip","create-tar"=>"tar",_=>"7z"};
     private void PrepareTargets()
     {
         if(request!.Action=="extract-entries")
@@ -176,7 +179,7 @@ public sealed partial class ShellTaskWindow:Window
         }
         if(request!.Action.StartsWith("create"))
         {
-            destination=output?.Text??ShellPaths.CreateTarget(request,request.Action=="create-zip"?"zip":"7z");targets=[destination];return;
+            destination=output?.Text??ShellPaths.CreateTarget(request,ActionFormat(request.Action));targets=[destination];return;
         }
         var reserved=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         targets=request.Paths.Select(source=>
@@ -218,9 +221,11 @@ public sealed partial class ShellTaskWindow:Window
                 });
                 if(creating)
                 {
-                    var kind=format?.SelectedItem?.ToString()??(request.Action=="create-zip"?"zip":"7z");
+                    var kind=format?.SelectedItem?.ToString()??ActionFormat(request.Action);
+                    var methodName=(method?.SelectedItem as CompressionChoice)?.Value;
+                    if(string.IsNullOrEmpty(methodName))methodName=CompressionOptions.Default(UserSettings.Load(),kind);
                     var compression=level?.SelectedIndex switch{1=>1,2=>9,_=>5};
-                    await engine.CreateAsync(targets[0],request.Paths,kind,compression,secret?.Password,encryptNames?.IsChecked==true,progress,cancellation.Token);
+                    await engine.CreateAsync(targets[0],request.Paths,kind,compression,secret?.Password,encryptNames?.IsChecked==true,methodName,progress,cancellation.Token);
                 }
                 else await ProcessArchiveAsync(request.Paths[i],targets[i],progress);
             }

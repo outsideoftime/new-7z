@@ -45,7 +45,7 @@ int wmain(int argc,wchar_t** argv){
   module=LoadLibraryW(argv[1]);if(!module)throw std::runtime_error("load extension");
   auto get=reinterpret_cast<HRESULT(WINAPI*)(REFCLSID,REFIID,void**)>(GetProcAddress(module,"DllGetClassObject"));
   if(!get||FAILED(get(rootId,IID_PPV_ARGS(&factory)))||FAILED(factory->CreateInstance(nullptr,IID_PPV_ARGS(&command))))throw std::runtime_error("factory");
-  check(visible(command,file)&&count(command)==3,"default file commands");
+  check(visible(command,file)&&count(command)==4,"default file commands");
   check(visible(command,archive)&&count(command)==5,"default archive commands");
   if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\New7z\\Explorer",0,nullptr,0,KEY_ALL_ACCESS,nullptr,&preferences,nullptr)!=ERROR_SUCCESS)throw std::runtime_error("preferences");
   auto write=[&](const wchar_t* name,DWORD value){if(RegSetValueExW(preferences,name,0,REG_DWORD,reinterpret_cast<BYTE*>(&value),sizeof(value))!=ERROR_SUCCESS)throw std::runtime_error("write settings");};
@@ -55,7 +55,8 @@ int wmain(int argc,wchar_t** argv){
   write(L"Commands",2|16);check(visible(command,archive)&&count(command)==2,"archive command filtering");
   check(!visible(command,file),"no relevant file command hides root");
   write(L"Commands",0);check(!visible(command,file)&&!visible(command,archive),"empty command set hides root");
-  write(L"Commands",255);check(visible(command,file)&&count(command)==3,"settings reread without DLL reload");
+  write(L"CommandsVersion",1);write(L"Commands",255);check(visible(command,file)&&count(command)==4,"legacy 255 expands to include TAR");
+  write(L"CommandsVersion",2);write(L"Commands",255);check(visible(command,file)&&count(command)==3,"explicit 255 without TAR stays filtered");
   command->Release();command=nullptr;factory->Release();factory=nullptr;FreeLibrary(module);module=nullptr;
   RegCloseKey(preferences);preferences=nullptr;RegOverridePredefKey(HKEY_CURRENT_USER,nullptr);RegCloseKey(sandbox);sandbox=nullptr;
   RegDeleteTreeW(HKEY_CURRENT_USER,sandboxPath.c_str());file->Release();archive->Release();CoUninitialize();return 0;

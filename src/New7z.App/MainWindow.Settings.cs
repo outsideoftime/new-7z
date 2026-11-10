@@ -6,6 +6,34 @@ namespace New7z.App;
 
 public sealed partial class MainWindow
 {
+    private void AddCompressionSettings(StackPanel panel)
+    {
+        var formats=new[]{"7z","zip","tar"};
+        var section=Stack(12);
+        section.Children.Add(Text(T("默认压缩格式","Default archive format"),18,true));
+        var choice=new ComboBox{Header=T("新建压缩包时默认使用","Default for new archives"),ItemsSource=new[]{T("7z（LZMA2，压缩率最高）","7z (LZMA2, smallest)"),T("ZIP（兼容性最好）","ZIP (most compatible)"),T("TAR（不压缩，仅打包）","TAR (uncompressed archive)")},SelectedIndex=Math.Max(0,Array.IndexOf(formats,UserSettings.NormalizeFormat(settings.DefaultFormat))),HorizontalAlignment=HorizontalAlignment.Stretch};
+        choice.SelectionChanged+=(_,_)=>
+        {
+            var value=formats[choice.SelectedIndex];
+            if(value==settings.DefaultFormat)return;
+            settings.DefaultFormat=value;settings.Save();
+        };
+        section.Children.Add(choice);
+        section.Children.Add(Text(T("用于主界面「新建压缩」和右键「新建压缩包…」的默认格式。快捷命令「压缩为 7Z / ZIP / TAR」始终按所选命令执行。","Used by New archive in the app and New archive… in Explorer. The Compress to 7Z / ZIP / TAR shortcuts always follow the chosen command."),12));
+        section.Children.Add(Text(T("默认压缩方法","Default compression method"),18,true));
+        section.Children.Add(MethodChoice("7z",settings.Default7zMethod,value=>{settings.Default7zMethod=value;settings.Save();}));
+        section.Children.Add(MethodChoice("zip",settings.DefaultZipMethod,value=>{settings.DefaultZipMethod=value;settings.Save();}));
+        section.Children.Add(Text(T("7z 和 ZIP 可分别选择新建时使用的方法；TAR 仅打包，不使用压缩方法。存储（不压缩）速度最快但体积最大；部分 ZIP 方法可能不被其他解压软件支持。","7z and ZIP can use different default methods. TAR only packs files and does not use a compression method. Store is fastest but largest; some ZIP methods may not open in other archivers."),12));
+        panel.Children.Add(Card(section));
+    }
+    private static ComboBox MethodChoice(string format,string current,Action<string> save)
+    {
+        var choices=CompressionOptions.For(format);
+        var normalized=CompressionMethods.Normalize(format,current)??CompressionMethods.Default(format);
+        var combo=new ComboBox{Header=format=="7z"?T("7z 压缩方法","7z compression method"):T("ZIP 压缩方法","ZIP compression method"),ItemsSource=choices,SelectedIndex=Math.Max(0,choices.ToList().FindIndex(item=>item.Value==normalized)),HorizontalAlignment=HorizontalAlignment.Stretch};
+        combo.SelectionChanged+=(_,_)=>{if(combo.SelectedItem is CompressionChoice value)save(value.Value);};
+        return combo;
+    }
     private void AddExplorerSettings(StackPanel panel)
     {
         var store=new ExplorerPreferencesStore();ExplorerPreferences saved;
@@ -19,7 +47,7 @@ public sealed partial class MainWindow
         foreach(var (flag,label) in new[]{
             (ExplorerCommands.Open,T("用 New7z 打开","Open with New7z")),(ExplorerCommands.ExtractNamed,T("解压到同名文件夹 / 分别解压","Extract to a folder with the same name / each")),
             (ExplorerCommands.ExtractTo,T("解压到…","Extract to…")),(ExplorerCommands.ExtractHere,T("解压到当前文件夹","Extract here")),(ExplorerCommands.Test,T("测试完整性","Test archive")),
-            (ExplorerCommands.Create,T("新建压缩包…","New archive…")),(ExplorerCommands.Create7z,T("压缩为 7z","Compress to 7z")),(ExplorerCommands.CreateZip,T("压缩为 ZIP","Compress to ZIP"))})
+            (ExplorerCommands.Create,T("新建压缩包…","New archive…")),(ExplorerCommands.Create7z,T("压缩为 7Z","Compress to 7Z")),(ExplorerCommands.CreateZip,T("压缩为 ZIP","Compress to ZIP")),(ExplorerCommands.CreateTar,T("压缩为 TAR","Compress to TAR"))})
         {
             var box=new CheckBox{Content=label,IsChecked=saved.Commands.HasFlag(flag)};commands.Children.Add(box);choices.Add((flag,box));
         }

@@ -7,7 +7,7 @@ namespace New7z.Core;
 public enum ExplorerCommands
 {
     None=0,Open=1,ExtractNamed=2,ExtractTo=4,ExtractHere=8,Test=16,
-    Create=32,Create7z=64,CreateZip=128,All=255
+    Create=32,Create7z=64,CreateZip=128,CreateTar=256,All=511
 }
 
 public sealed record ExplorerPreferences(bool MenuEnabled=true,ExplorerCommands Commands=ExplorerCommands.All,bool AutoCloseOnSuccess=false,bool HideWindowsCompressMenu=false);
@@ -25,12 +25,16 @@ public sealed class ExplorerPreferencesStore
     {
         using var key=hive.OpenSubKey(path);
         static int Value(RegistryKey? key,string name,int fallback)=>key?.GetValue(name) is int value?value:fallback;
-        return new(Value(key,"MenuEnabled",1)!=0,(ExplorerCommands)(Value(key,"Commands",255)&255),Value(key,"AutoCloseOnSuccess",0)!=0,Value(key,"HideWindowsCompressMenu",0)!=0);
+        var commands=Value(key,"Commands",511);
+        // 255 was "all commands" before the TAR command existed; expand it once.
+        if(commands==255&&Value(key,"CommandsVersion",0)<2)commands=511;
+        return new(Value(key,"MenuEnabled",1)!=0,(ExplorerCommands)(commands&511),Value(key,"AutoCloseOnSuccess",0)!=0,Value(key,"HideWindowsCompressMenu",0)!=0);
     }
     public void Save(ExplorerPreferences value)
     {
         using var key=hive.CreateSubKey(path,true)??throw new IOException(Loc.T("无法保存资源管理器设置。", "Could not save Explorer settings."));
-        key.SetValue("Commands",(int)value.Commands&255,RegistryValueKind.DWord);
+        key.SetValue("Commands",(int)value.Commands&511,RegistryValueKind.DWord);
+        key.SetValue("CommandsVersion",2,RegistryValueKind.DWord);
         key.SetValue("AutoCloseOnSuccess",value.AutoCloseOnSuccess?1:0,RegistryValueKind.DWord);
         key.SetValue("MenuEnabled",value.MenuEnabled?1:0,RegistryValueKind.DWord);
         key.SetValue("HideWindowsCompressMenu",value.HideWindowsCompressMenu?1:0,RegistryValueKind.DWord);

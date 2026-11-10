@@ -1,0 +1,10 @@
+PASS default file commands
+PASS default archive commands
+PASS master switch hides menu
+PASS file command filtering
+PASS no relevant archive command hides root
+PASS archive command filtering
+PASS no relevant file command hides root
+PASS empty command set hides root
+PASS legacy 255 expands to include TAR
+PASS explicit 255 without TAR stays filtered

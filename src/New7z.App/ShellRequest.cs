@@ -25,7 +25,7 @@ internal sealed record ShellRequest(string Action,string[] Paths)
         finally {File.Delete(full);}
         if(request?.Paths is not {Length: >0 and <=10000}||request.Paths.Any(p=>string.IsNullOrWhiteSpace(p)||!System.IO.Path.IsPathFullyQualified(p)||!File.Exists(p)&&!Directory.Exists(p)))
             throw new IOException(T("选择的文件已移动或不存在。","A selected file has moved or no longer exists."));
-        if(request.Action is not ("open" or "create" or "create-7z" or "create-zip" or "extract-to" or "extract-named" or "extract-here" or "test"))
+        if(request.Action is not ("open" or "create" or "create-7z" or "create-zip" or "create-tar" or "extract-to" or "extract-named" or "extract-here" or "test"))
             throw new IOException(T("不支持的右键菜单命令。","Unsupported shell menu command."));
         return request;
     }

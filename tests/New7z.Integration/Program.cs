@@ -16,6 +16,10 @@ try
     {
         var store=new ExplorerPreferencesStore(Microsoft.Win32.Registry.CurrentUser,preferencesKey);
         Assert(store.Read()==new ExplorerPreferences(),"settings default: menu enabled, all commands, manual close");
+        var legacyKey=preferencesKey+"-legacy";
+        using(var legacy=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(legacyKey,true))legacy.SetValue("Commands",255,Microsoft.Win32.RegistryValueKind.DWord);
+        Assert(new ExplorerPreferencesStore(Microsoft.Win32.Registry.CurrentUser,legacyKey).Read().Commands==ExplorerCommands.All,"legacy command mask expands to include TAR");
+        Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(legacyKey,false);
         var selected=new ExplorerPreferences(false,ExplorerCommands.ExtractNamed|ExplorerCommands.CreateZip,true);
         store.Save(selected);Assert(store.Read()==selected,"Explorer settings persist across store instances");
         var reopened=new ExplorerPreferencesStore(Microsoft.Win32.Registry.CurrentUser,preferencesKey);
@@ -68,7 +72,7 @@ try
     // A valid PNG preview fixture, independent of any system 7-Zip installation.
     await File.WriteAllBytesAsync(Path.Combine(source,"image.png"),Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII="));
     var brand=Path.Combine(Environment.CurrentDirectory,"图标","logo.png");if(File.Exists(brand))File.Copy(brand,Path.Combine(source,"image.png"),true);
-    foreach(var format in new[]{"7z","zip"})
+    foreach(var format in new[]{"7z","zip","tar"})
     {
         var archive=Path.Combine(root,"真实压缩."+format);
         await engine.CreateAsync(archive,[source],format);
@@ -89,6 +93,35 @@ try
             Assert(interoperable.Entries.Any(e=>e.FullName.EndsWith("说明.txt",StringComparison.Ordinal)),"balanced ZIP UTF-8 names without legacy encoding override");
         }
     }
+    var tarPasswordRejected=false;
+    try{await engine.CreateAsync(Path.Combine(root,"password.tar"),[source],"tar",password:"secret");}
+    catch(ArgumentException){tarPasswordRejected=true;}
+    Assert(tarPasswordRejected&&!File.Exists(Path.Combine(root,"password.tar")),"TAR rejects passwords without creating output");
+    var methodText=Path.Combine(root,"方法测试.txt");const string methodMarker="compression method";
+    await File.WriteAllTextAsync(methodText,string.Concat(Enumerable.Repeat("New7z compression method test line 0123456789\n",5000)),new UTF8Encoding(false));
+    foreach(var method in new[]{"LZMA2","LZMA","BZip2","PPMd","Deflate","Copy"})
+    {
+        var archive=Path.Combine(root,"method-"+method+".7z");
+        await engine.CreateAsync(archive,[methodText],"7z",method:method);
+        var entry=(await engine.ListAsync(archive)).Single();
+        Assert(ArchiveEngine.DecodeText(await engine.ReadAsync(archive,entry)).Contains(methodMarker),"7z method "+method+" roundtrip");
+        await engine.TestAsync(archive);checks.Add("7z method "+method+" integrity");
+    }
+    foreach(var method in new[]{"Deflate","Deflate64","BZip2","LZMA","PPMd","Copy"})
+    {
+        var archive=Path.Combine(root,"method-"+method+".zip");
+        await engine.CreateAsync(archive,[methodText],"zip",method:method);
+        var entry=(await engine.ListAsync(archive)).Single();
+        Assert(ArchiveEngine.DecodeText(await engine.ReadAsync(archive,entry)).Contains(methodMarker),"ZIP method "+method+" roundtrip");
+        var expected=method switch{"Deflate"=>8,"Deflate64"=>9,"BZip2"=>12,"LZMA"=>14,"PPMd"=>98,_=>0};
+        var actual=BitConverter.ToUInt16(await File.ReadAllBytesAsync(archive),8);
+        Assert(actual==expected,"ZIP method "+method+" header id ("+actual+")");
+        await engine.TestAsync(archive);checks.Add("ZIP method "+method+" integrity");
+    }
+    var invalidMethod=false;
+    try{await engine.CreateAsync(Path.Combine(root,"invalid-method.7z"),[methodText],"7z",method:"NoSuchMethod");}
+    catch(ArgumentException){invalidMethod=true;}
+    Assert(invalidMethod&&!File.Exists(Path.Combine(root,"invalid-method.7z")),"unsupported compression method is rejected");
     foreach(var compressionLevel in new[]{1,9})
     {
         var profileZip=Path.Combine(root,$"profile-{compressionLevel}.zip");await engine.CreateAsync(profileZip,[source],"zip",compressionLevel);

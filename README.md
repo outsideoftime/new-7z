@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前预览版：**0.1.27**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前预览版：**0.1.28**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
@@ -10,7 +10,7 @@
 
 下载安装 EXE，按向导安装到当前用户目录。安装包约 **23.1 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。详细操作见 [操作说明](docs/操作说明.md)。
 
-- 创建 7z、ZIP，支持密码与 7z 文件名加密；读取、解压和校验引擎支持的归档。
+- 创建 7z、ZIP、TAR，7z/ZIP 支持密码与 7z 文件名加密；读取、解压和校验引擎支持的归档。设置中可选择默认格式，并分别指定 7z/ZIP 的默认压缩方法。
 - 压缩包内直接预览图片和文本/代码文件，常见源码、配置、脚本扩展名（.cs、.py、.rs、.toml、Makefile 等）都可当作文本查看；支持中文文件名、文件夹、多选解压。
 - 选中条目后可直接拖到资源管理器完成拖动解压；7z 和 ZIP 支持在包内添加文件、删除条目，写入采用临时文件校验后替换，失败或取消不影响原包。
 - 启动时自动从 GitHub Releases 检查并下载新版本，安装包按同版本 `SHA256SUMS.txt` 校验后询问安装；可在设置中关闭自动检查。
@@ -40,20 +40,20 @@
 可以。安装包内含完整的 7-Zip 引擎和运行库，离线运行，不需要另装 7-Zip，也不需要 .NET 运行库。
 
 **RAR 文件可以压缩吗？**
-RAR 只支持读取和解压，不能创建；压缩请选择 7z 或 ZIP。
+RAR 只支持读取和解压，不能创建；压缩请选择 7z、ZIP 或 TAR。
 
 **需要管理员权限或联网吗？**
 安装和使用压缩、解压、预览都不需要联网，也不需要管理员权限。应用更新会访问 GitHub Releases 检查并下载新版本，可以在设置 → 应用更新中关闭。
 
 **和 Windows 自带的「压缩到」有什么区别？**
-Windows 11 自带的压缩只支持 ZIP；New7z 支持 7z/ZIP 压缩，能读取更多格式，并提供压缩包预览、资源管理器右键菜单和文件关联。
+Windows 11 自带的压缩只支持 ZIP；New7z 支持 7z/ZIP/TAR 压缩，能读取更多格式，并提供压缩包预览、资源管理器右键菜单和文件关联。
 
 **如何卸载？**
 在 Windows「已安装的应用」中找到 New7z 卸载；卸载会恢复 New7z 修改过的系统「压缩到」菜单设置。
 
 ## English
 
-New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zip engine. It creates 7z and ZIP archives, extracts 7z, ZIP, RAR, TAR, GZ, XZ, BZ2 and ISO, previews images, text and source files inside archives, and integrates with the Explorer context menu and Windows default apps. It runs offline and does not require a separate 7-Zip or .NET runtime installation.
+New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zip engine. It creates 7z, ZIP and TAR archives, extracts 7z, ZIP, RAR, TAR, GZ, XZ, BZ2 and ISO, previews images, text and source files inside archives, and integrates with the Explorer context menu and Windows default apps. It runs offline and does not require a separate 7-Zip or .NET runtime installation.
 
 ## 构建
 
@@ -73,7 +73,8 @@ New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zi
 发行构建采用 WinUI 组件依赖与部分托管裁剪，保留自有程序集、JSON 源生成上下文和 WinRT.Runtime 全部成员（CsWinRT 的 ABI 辅助类型依赖反射解析，裁掉后会让 XAML 绑定对象编组失败）；可用 `-Untrimmed` 构建未裁剪对照版。Microsoft.Windows.SDK.NET 程序集会报告 IL2104 裁剪警告；已验证发布版设置、XAML 文件名绑定、文本/图片读取及快捷任务，更多环境仍需验证。
 
 ```powershell
-./scripts/test.ps1                   # 37 项引擎/安全/配置检查
+./scripts/test.ps1                   # 96 项引擎/安全/配置检查
+./scripts/test-drag-extraction.ps1   # 原生拖放数据与真实 Windows Shell 复制检查
 ./scripts/test-shell-preferences.ps1 # 9 项真实 COM 菜单配置检查
 ./scripts/test-installer.ps1         # 隔离产品标识的安装、修复、关联、升级、卸载检查
 # 可通过 -AppDirectory 指定发布目录

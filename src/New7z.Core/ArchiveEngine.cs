@@ -64,7 +64,13 @@ public sealed class ArchiveEngine
         var callback=Callback(cancellation,progress);Check(NativeMethods.NzTest(path,password,callback,IntPtr.Zero),cancellation);GC.KeepAlive(callback);
     },cancellation);
 
-    public bool DragArchive(string archive,IReadOnlyList<ArchiveEntry> selected,IReadOnlyList<ArchiveEntry> roots,string tempPath,IntPtr owner,string? password=null,Action<EngineProgress>? progress=null)
+    public string GetDragDiagnostics()
+    {
+        NativeMethods.NzGetDragDiagnostics(out var pointer);
+        try{return Marshal.PtrToStringUni(pointer)??"";}finally{NativeMethods.NzFree(pointer);}
+    }
+
+    public ArchiveDragData CreateDragData(IntPtr package,string archive,IReadOnlyList<ArchiveEntry> selected,IReadOnlyList<ArchiveEntry> roots,string tempPath,IntPtr owner,string? password=null)
     {
         if(selected.Count==0||roots.Count==0)throw new ArgumentException(Loc.T("没有可以拖动的压缩包内容。", "There is nothing to drag from this archive."));
         var root=System.IO.Path.GetFullPath(tempPath);Directory.CreateDirectory(root);EnsureNoReparse(root);
@@ -86,17 +92,31 @@ public sealed class ArchiveEngine
             outputByIndex.Add(entry.Index,output);
         }
         var rootPaths=roots.Select(entry=>outputByIndex.TryGetValue(entry.Index,out var output)?output:ResolveOutput(root,entry.NormalizedPath)).ToArray();
-        var callback=new NativeMethods.ProgressCallback((total,done,_)=>
-        {
-            try{progress?.Invoke(new(total,done));return 0;}catch{return 1;}
-        });
-        var result=NativeMethods.NzDragArchive(owner,System.IO.Path.GetFullPath(archive),password,selected.Select(e=>e.Index).ToArray(),selected.Select(e=>outputByIndex[e.Index]).ToArray(),(uint)selected.Count,rootPaths,(uint)rootPaths.Length,root,callback,IntPtr.Zero);
-        GC.KeepAlive(callback);Check(result,CancellationToken.None);return result==0;
+        Check(NativeMethods.NzCreateArchiveDragData(package,owner,System.IO.Path.GetFullPath(archive),password,selected.Select(e=>e.Index).ToArray(),selected.Select(e=>outputByIndex[e.Index]).ToArray(),(uint)selected.Count,rootPaths,(uint)rootPaths.Length,root,Loc.T("正在解压拖动内容","Extracting dragged items"),out var session),CancellationToken.None);
+        return new ArchiveDragData(session);
     }
 
-    public Task CreateAsync(string output,IReadOnlyList<string> sources,string format="7z",int level=5,string? password=null,bool encryptNames=false,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default) => Task.Run(()=>
+    public sealed class ArchiveDragData:IDisposable
     {
-        if(format is not ("7z" or "zip"))throw new ArgumentException(Loc.T("当前创建格式支持 7z 和 ZIP。", "Only 7z and ZIP can be created."));
+        private IntPtr session;
+        internal ArchiveDragData(IntPtr value)=>session=value;
+        public void ThrowIfFailed()=>Check(NativeMethods.NzArchiveDragResult(session),CancellationToken.None);
+        public bool WasTransferred=>NativeMethods.NzArchiveDragWasTransferred(session)!=0;
+        public void Dispose(){var value=Interlocked.Exchange(ref session,IntPtr.Zero);if(value!=IntPtr.Zero)NativeMethods.NzReleaseArchiveDragData(value);GC.SuppressFinalize(this);}
+        ~ArchiveDragData()=>Dispose();
+    }
+
+    public Task CreateAsync(string output,IReadOnlyList<string> sources,string format="7z",int level=5,string? password=null,bool encryptNames=false,string? method=null,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default) => Task.Run(()=>
+    {
+        if(format is not ("7z" or "zip" or "tar"))throw new ArgumentException(Loc.T("当前创建格式支持 7z、ZIP 和 TAR。", "Only 7z, ZIP and TAR can be created."));
+        if(format=="tar"&&!string.IsNullOrEmpty(password))throw new ArgumentException(Loc.T("TAR 不支持密码，请改用 7z 或 ZIP。", "TAR does not support passwords; use 7z or ZIP instead."));
+        if(format=="tar")method=null;
+        else if(method!=null)
+        {
+            var normalized=CompressionMethods.Normalize(format,method);
+            if(normalized==null)throw new ArgumentException(Loc.T($"不支持的压缩方法：{method}", $"Unsupported compression method: {method}"));
+            method=normalized;
+        }
         if(level is <0 or >9)throw new ArgumentOutOfRangeException(nameof(level));
         if(sources.Count==0)throw new ArgumentException(Loc.T("请选择要压缩的文件或文件夹。", "Select the files or folders to compress."));
         output=System.IO.Path.GetFullPath(output);
@@ -112,11 +132,14 @@ public sealed class ArchiveEngine
         var temp=output+"."+Guid.NewGuid().ToString("N")+".partial";
         try
         {
-            if(format=="zip"&&string.IsNullOrEmpty(password)&&level<=6)
+            if(format=="zip"&&string.IsNullOrEmpty(password)&&level<=6&&(method==null||method=="Deflate"))
                 FastZipWriter.Create(temp,paths,names,level,progress,cancellation);
             else
             {
-                var callback=Callback(cancellation,progress);Check(NativeMethods.NzCreate(temp,format=="zip"?1:0,level,password,encryptNames?1:0,paths.ToArray(),names.ToArray(),(uint)paths.Count,callback,IntPtr.Zero),cancellation);GC.KeepAlive(callback);
+                // The ZIP handler selects Store from level 0; its "m=Copy" path is not accepted.
+                var nativeLevel=format=="zip"&&method=="Copy"?0:level;
+                var nativeMethod=format=="zip"&&method=="Copy"?null:method;
+                var callback=Callback(cancellation,progress);Check(NativeMethods.NzCreate(temp,format=="zip"?1:format=="tar"?2:0,nativeLevel,nativeMethod,password,encryptNames?1:0,paths.ToArray(),names.ToArray(),(uint)paths.Count,callback,IntPtr.Zero),cancellation);GC.KeepAlive(callback);
             }
             cancellation.ThrowIfCancellationRequested();File.Move(temp,output,false);
         }

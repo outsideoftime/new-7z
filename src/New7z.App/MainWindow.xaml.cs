@@ -20,7 +20,6 @@ namespace New7z.App;
 
 public sealed partial class MainWindow:Window
 {
-    private sealed record ArchiveDragPayload(string Archive,IReadOnlyList<ArchiveEntry> Entries,IReadOnlyList<ArchiveEntry> Roots,string Password);
     private readonly ArchiveEngine engine=new();
     private readonly UserSettings settings=UserSettings.Load();
     private readonly SemaphoreSlim queue=new(1,1);
@@ -34,10 +33,8 @@ public sealed partial class MainWindow:Window
     private bool initialized;
     private CancellationTokenSource? openCancellation;
     private long openVersion;
-    private Windows.Foundation.Point? dragPressPoint;
-    private ArchiveRow? dragPressRow;
-    private bool dragGestureActive;
-    private ArchiveDragPayload? dragPayload;
+    private ArchiveEngine.ArchiveDragData? dragData;
+    private string? dragTemp;
     private readonly List<(ArchiveJob Job,Action<ArchiveJob> Handler)> taskSubscriptions=[];
     private readonly List<string> startupFiles=[];
     private nint Hwnd=>WindowNative.GetWindowHandle(this);
@@ -65,6 +62,8 @@ public sealed partial class MainWindow:Window
             AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X+(area.Width-width)/2,area.Y+(area.Height-height)/2,width,height));
             var launchArgs=Environment.GetCommandLineArgs().Skip(1).ToArray();
             if(launchArgs.Length==3&&launchArgs[0]=="--verify-ui"){await VerifyUiAsync(launchArgs[1],launchArgs[2]);return;}
+            if(launchArgs.Length==3&&launchArgs[0]=="--verify-drag-ui"){await PrepareDragVerificationAsync(launchArgs[1],launchArgs[2]);return;}
+            if(launchArgs.Length==3&&launchArgs[0]=="--verify-drag-text"){await PrepareDragVerificationAsync(launchArgs[1],launchArgs[2],true);return;}
             var arg=startupArchive??launchArgs.FirstOrDefault(File.Exists);if(arg!=null)await OpenArchiveAsync(arg);
             if(settings.AutoCheckUpdates&&!AppEnvironment.IsPackaged)_=CheckForUpdatesAsync(false);
         };
@@ -126,7 +125,7 @@ public sealed partial class MainWindow:Window
     {
         var content=Stack(24);content.Children.Add(Text(T("主页","Home"),28,true));content.Children.Add(Text(T("打开压缩包，或将文件打包分享。","Open an archive, or pack files to share.")));
         var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};actions.Children.Add(Button(T("打开压缩包","Open archive"),async(_,_)=>{var f=await PickArchiveAsync();if(f!=null)await OpenArchiveAsync(f);}));actions.Children.Add(Button(T("新建压缩","New archive"),async(_,_)=>await CreateDialogAsync(),true));content.Children.Add(actions);
-        var drop=Stack(10);drop.Children.Add(Text(T("把文件或文件夹拖到窗口","Drop files or folders here"),22,true));drop.Children.Add(Text(T("压缩包可查看内容，普通文件可打包为 7z 或 ZIP。无需另装 7-Zip。","Open an archive to browse it, or pack files into 7z or ZIP. No separate 7-Zip needed.")));var pick=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};pick.Children.Add(Button(T("选择文件","Choose files"),async(_,_)=>{var paths=await PickFilesAsync();if(paths.Count>0)await CreateDialogAsync(paths);}));pick.Children.Add(Button(T("选择文件夹","Choose folder"),async(_,_)=>{var path=await PickFolderAsync();if(path!=null)await CreateDialogAsync([path]);}));drop.Children.Add(pick);content.Children.Add(Card(drop));
+        var drop=Stack(10);drop.Children.Add(Text(T("把文件或文件夹拖到窗口","Drop files or folders here"),22,true));drop.Children.Add(Text(T("压缩包可查看内容，普通文件可打包为 7z、ZIP 或 TAR。无需另装 7-Zip。","Open an archive to browse it, or pack files into 7z, ZIP or TAR. No separate 7-Zip needed.")));var pick=new StackPanel{Orientation=Orientation.Horizontal,Spacing=10};pick.Children.Add(Button(T("选择文件","Choose files"),async(_,_)=>{var paths=await PickFilesAsync();if(paths.Count>0)await CreateDialogAsync(paths);}));pick.Children.Add(Button(T("选择文件夹","Choose folder"),async(_,_)=>{var path=await PickFolderAsync();if(path!=null)await CreateDialogAsync([path]);}));drop.Children.Add(pick);content.Children.Add(Card(drop));
         var recent=Stack(8);recent.Children.Add(Text(T("最近使用","Recent"),18,true));
         var unavailable=settings.Recent.Count(p=>!File.Exists(p));
         foreach(var path in settings.Recent.Take(12).ToList())
@@ -162,7 +161,7 @@ public sealed partial class MainWindow:Window
     private async void FilesDropped(object sender,DragEventArgs e)
     {
         if(e.Handled)return;
-        if(dragPayload!=null){e.Handled=true;return;}
+        if(dragData!=null){e.Handled=true;return;}
         if(!e.DataView.Contains(StandardDataFormats.StorageItems))return;e.Handled=true;var deferral=e.GetDeferral();
         try{var items=await e.DataView.GetStorageItemsAsync();var paths=items.Select(i=>i.Path).ToList();if(paths.Count==0)return;if(page=="archive"&&archive!=null){await AddSourcesAsync(paths);return;}if(paths.Count==1&&File.Exists(paths[0])&&new[]{".7z",".zip",".rar",".tar",".gz",".xz",".bz2",".iso"}.Contains(System.IO.Path.GetExtension(paths[0]).ToLowerInvariant()))await OpenArchiveAsync(paths[0]);else if(paths.Count>0)await CreateDialogAsync(paths);}catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}finally{deferral.Complete();}
     }
@@ -225,7 +224,7 @@ public sealed partial class MainWindow:Window
         }
         AddHeader(T("名称","Name"),2);AddHeader(T("大小","Size"),3);AddHeader(T("压缩后","Packed"),4);AddHeader(T("修改时间","Modified"),5);
         table.Children.Add(header);
-        fileList=new ListView{SelectionMode=ListViewSelectionMode.Multiple,IsMultiSelectCheckBoxEnabled=true,HorizontalContentAlignment=HorizontalAlignment.Stretch};
+        fileList=new ListView{SelectionMode=ListViewSelectionMode.Multiple,IsMultiSelectCheckBoxEnabled=true,HorizontalContentAlignment=HorizontalAlignment.Stretch,CanDragItems=true};
         fileList.ItemTemplate=(DataTemplate)XamlReader.Load("""
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><Grid MinHeight="48" ColumnSpacing="12" Padding="4,5"><Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/><ColumnDefinition Width="100"/><ColumnDefinition Width="145"/></Grid.ColumnDefinitions><FontIcon Glyph="{Binding Glyph}" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding Name}" ToolTipService.ToolTip="{Binding FullPath}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/><TextBlock Grid.Column="2" Text="{Binding SizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="3" Text="{Binding PackedSizeText}" VerticalAlignment="Center" FontSize="12"/><TextBlock Grid.Column="4" Text="{Binding ModifiedText}" VerticalAlignment="Center" FontSize="12"/></Grid></DataTemplate>
         """);
@@ -234,11 +233,11 @@ public sealed partial class MainWindow:Window
             if(elements.Any(x=>x is CheckBox))return;
             if(elements.OfType<FrameworkElement>().Select(x=>x.DataContext).OfType<ArchiveRow>().FirstOrDefault() is { } row){e.Handled=true;await ActivateRowAsync(row.Entry);}
         };fileList.KeyDown+=async(_,e)=>{if(e.Key==VirtualKey.Enter&&fileList.SelectedItem is ArchiveRow row){e.Handled=true;await ActivateRowAsync(row.Entry);}else if(e.Key==VirtualKey.Delete){e.Handled=true;await DeleteSelectedAsync();}else if(e.Key==VirtualKey.A&&IsControlDown()){e.Handled=true;SelectAllRows();}};
-        // Keep pointer handling in this view, then use the same native OLE drag contract as 7-Zip.
-        fileList.AddHandler(UIElement.PointerPressedEvent,new PointerEventHandler(FileListPointerPressed),true);
-        fileList.AddHandler(UIElement.PointerMovedEvent,new PointerEventHandler(FileListPointerMoved),true);
-        fileList.AddHandler(UIElement.PointerReleasedEvent,new PointerEventHandler(FileListPointerCanceled),true);
-        fileList.AddHandler(UIElement.PointerCanceledEvent,new PointerEventHandler(FileListPointerCanceled),true);
+        // WinUI owns gesture recognition and input tracking. A native data object
+        // supplies 7-Zip-style delayed rendering through IDataObjectProvider.
+        fileList.DragItemsStarting+=FileListDragItemsStarting;
+        fileList.DragItemsCompleted+=FileListDragItemsCompleted;
+        fileList.DragStarting+=(_,e)=>{e.AllowedOperations=DataPackageOperation.Copy|DataPackageOperation.Move;};
         fileList.AllowDrop=true;
         fileList.AddHandler(UIElement.DragOverEvent,new DragEventHandler((_,e)=>UpdateDragOver(e)),true);
         fileList.AddHandler(UIElement.DropEvent,new DragEventHandler(FilesDropped),true);
@@ -276,15 +275,22 @@ public sealed partial class MainWindow:Window
     {
         sources??=[];var panel=Stack(14);var list=Text(sources.Count>0?string.Join(Environment.NewLine,sources):T("请选择来源文件或文件夹","Choose source files or folders"),12);panel.Children.Add(list);
         var sourceActions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};sourceActions.Children.Add(Button(T("添加文件","Add files"),async(_,_)=>{sources.AddRange(await PickFilesAsync());list.Text=string.Join(Environment.NewLine,sources);}));sourceActions.Children.Add(Button(T("添加文件夹","Add folder"),async(_,_)=>{var f=await PickFolderAsync();if(f!=null)sources.Add(f);list.Text=string.Join(Environment.NewLine,sources);}));panel.Children.Add(sourceActions);
-        var output=Input(T("保存为","Save as"),System.IO.Path.Combine(ShellPaths.SuggestedFolder(sources),ShellPaths.SuggestedName(sources)+".7z"));panel.Children.Add(output);
+        var formats=new[]{"7z","zip","tar"};var defaultFormat=UserSettings.NormalizeFormat(settings.DefaultFormat);
+        var output=Input(T("保存为","Save as"),System.IO.Path.Combine(ShellPaths.SuggestedFolder(sources),ShellPaths.SuggestedName(sources)+"."+defaultFormat));panel.Children.Add(output);
         panel.Children.Add(Button(T("选择保存文件夹","Choose folder"),async(_,_)=>{var path=await PickFolderAsync();if(path!=null)output.Text=System.IO.Path.Combine(path,System.IO.Path.GetFileName(output.Text));}));
-        var format=new ComboBox{Header=T("格式","Format"),ItemsSource=new[]{"7z","zip"},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};var level=new ComboBox{Header=T("压缩级别","Compression level"),ItemsSource=new[]{T("标准","Normal"),T("更快","Faster"),T("更小","Smaller")},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};panel.Children.Add(format);panel.Children.Add(level);
-        var secret=new PasswordBox{Header=T("密码（可选）","Password (optional)"),PasswordRevealMode=PasswordRevealMode.Peek};var encrypt=new CheckBox{Content=T("加密文件名（仅 7z）","Encrypt file names (7z only)"),IsEnabled=false};secret.PasswordChanged+=(_,_)=>{encrypt.IsEnabled=secret.Password.Length>0&&format.SelectedIndex==0;if(!encrypt.IsEnabled)encrypt.IsChecked=false;};format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());encrypt.IsEnabled=secret.Password.Length>0&&format.SelectedIndex==0;if(!encrypt.IsEnabled)encrypt.IsChecked=false;};panel.Children.Add(secret);panel.Children.Add(encrypt);
+        var format=new ComboBox{Header=T("格式","Format"),ItemsSource=formats,SelectedIndex=Math.Max(0,Array.IndexOf(formats,defaultFormat)),HorizontalAlignment=HorizontalAlignment.Stretch};
+        var method=new ComboBox{Header=T("压缩方法","Compression method"),HorizontalAlignment=HorizontalAlignment.Stretch};
+        var level=new ComboBox{Header=T("压缩级别","Compression level"),ItemsSource=new[]{T("标准","Normal"),T("更快","Faster"),T("更小","Smaller")},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
+        void UpdateMethods(){var code=formats[format.SelectedIndex];var choices=CompressionOptions.For(code);method.ItemsSource=choices;var preferred=CompressionOptions.Default(settings,code);method.SelectedIndex=Math.Max(0,choices.ToList().FindIndex(item=>item.Value==preferred));method.IsEnabled=choices.Count>0;}
+        panel.Children.Add(format);panel.Children.Add(method);panel.Children.Add(level);
+        var secret=new PasswordBox{Header=T("密码（可选）","Password (optional)"),PasswordRevealMode=PasswordRevealMode.Peek};var encrypt=new CheckBox{Content=T("加密文件名（仅 7z）","Encrypt file names (7z only)"),IsEnabled=false};
+        void UpdateFormatState(){var tar=format.SelectedIndex==2;if(tar)secret.Password="";secret.IsEnabled=!tar;level.IsEnabled=!tar;method.IsEnabled=!tar;encrypt.IsEnabled=!tar&&format.SelectedIndex==0&&secret.Password.Length>0;if(!encrypt.IsEnabled)encrypt.IsChecked=false;}
+        secret.PasswordChanged+=(_,_)=>UpdateFormatState();format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());UpdateMethods();UpdateFormatState();};panel.Children.Add(secret);panel.Children.Add(encrypt);UpdateMethods();UpdateFormatState();
         var error=Text("",12);error.Foreground=new SolidColorBrush(Colors.Firebrick);panel.Children.Add(error);
         var dialog=Dialog(T("新建压缩包","New archive"),new ScrollViewer{Content=panel,MaxHeight=560,MinWidth=480},T("开始压缩","Create"));dialog.PrimaryButtonClick+=(_,e)=>{if(sources.Count==0||string.IsNullOrWhiteSpace(output.Text)){error.Text=T("请选择来源并填写输出路径。","Choose sources and an output path.");e.Cancel=true;}else if(File.Exists(output.Text)){error.Text=T("输出文件已存在，请改用一个新名称。","The output file already exists. Choose another name.");e.Cancel=true;}};
         if(await ShowDialogAsync(dialog)!=ContentDialogResult.Primary)return;
-        var target=output.Text;var inputs=sources.ToArray();var kind=format.SelectedItem.ToString()!;var compression=level.SelectedIndex switch{1=>1,2=>9,_=>5};var key=secret.Password;var header=encrypt.IsChecked==true;
-        QueueJob(T("压缩 ","Compress ")+System.IO.Path.GetFileName(target),target,(p,ct)=>engine.CreateAsync(target,inputs,kind,compression,key,header,p,ct));
+        var target=output.Text;var inputs=sources.ToArray();var kind=format.SelectedItem.ToString()!;var compression=level.SelectedIndex switch{1=>1,2=>9,_=>5};var key=secret.Password;var header=encrypt.IsChecked==true;var selectedMethod=(method.SelectedItem as CompressionChoice)?.Value;
+        QueueJob(T("压缩 ","Compress ")+System.IO.Path.GetFileName(target),target,(p,ct)=>engine.CreateAsync(target,inputs,kind,compression,key,header,selectedMethod,p,ct));
     }
     private async Task ExtractDialogAsync(IReadOnlyList<ArchiveEntry> selected)
     {
@@ -425,75 +431,63 @@ public sealed partial class MainWindow:Window
     }
     private void UpdateDragOver(DragEventArgs e)
     {
-        if(dragPayload!=null){e.AcceptedOperation=DataPackageOperation.None;return;}
+        if(dragData!=null){e.AcceptedOperation=DataPackageOperation.None;return;}
         if(e.DataView.Contains(StandardDataFormats.StorageItems))e.AcceptedOperation=DataPackageOperation.Copy;
     }
-    private void FileListPointerPressed(object sender,PointerRoutedEventArgs e)
+    private async void FileListDragItemsStarting(object sender,DragItemsStartingEventArgs e)
     {
-        dragPressPoint=null;dragPressRow=null;
-        if(fileList==null)return;
-        var currentPoint=e.GetCurrentPoint(fileList);
-        if(!currentPoint.Properties.IsLeftButtonPressed)return;
-        var source=e.OriginalSource as DependencyObject;
-        ArchiveRow? row=null;
-        while(source!=null&&!ReferenceEquals(source,fileList))
-        {
-            if(source is CheckBox)return;
-            if(source is FrameworkElement element&&element.DataContext is ArchiveRow item){row=item;break;}
-            source=VisualTreeHelper.GetParent(source);
-        }
-        if(row==null){return;}
-        dragPressRow=row;dragPressPoint=currentPoint.Position;
-    }
-    private void FileListPointerCanceled(object sender,PointerRoutedEventArgs e){dragPressPoint=null;dragPressRow=null;}
-    private async void FileListPointerMoved(object sender,PointerRoutedEventArgs e)
-    {
-        if(dragPressPoint is not { } origin||dragGestureActive||fileList==null)return;
-        var point=e.GetCurrentPoint(fileList);
-        if(!point.Properties.IsLeftButtonPressed){dragPressPoint=null;dragPressRow=null;return;}
-        var current=point.Position;
-        if(Math.Abs(current.X-origin.X)<8&&Math.Abs(current.Y-origin.Y)<8)return;
-        var pressed=dragPressRow;dragPressPoint=null;dragPressRow=null;
-        if(pressed==null||archive==null||page!="archive"||previewOpen)return;
-        e.Handled=true;
-        // Pressing an unselected row drags that row; pressing inside a selection drags the selection.
-        if(!fileList.SelectedItems.OfType<ArchiveRow>().Any(item=>ReferenceEquals(item,pressed))){fileList.SelectedItems.Clear();fileList.SelectedItems.Add(pressed);}
-        var rows=fileList.SelectedItems.OfType<ArchiveRow>().Select(r=>r.Entry).ToList();
-        if(rows.Count==0)rows=[pressed.Entry];
-        dragGestureActive=true;
-        string? temp=null;
+        if(dragVerificationReport!=null)File.AppendAllText(dragVerificationReport+".trace","Starting items="+e.Items.Count+" page="+page+" archive="+(archive!=null)+" preview="+previewOpen+Environment.NewLine);
+        if(dragData!=null||archive==null||page!="archive"||previewOpen){e.Cancel=true;return;}
+        var rows=e.Items.OfType<ArchiveRow>().Select(row=>row.Entry).ToArray();
+        if(rows.Length==0){e.Cancel=true;return;}
+        if(dragVerificationTextOnly){e.Data.SetText("New7z drag baseline");e.Data.RequestedOperation=DataPackageOperation.Copy;return;}
         try
         {
-            var currentArchive=archive;
             if(entries.Any(entry=>entry.Encrypted)&&string.IsNullOrEmpty(password))
             {
-                if(await EnsurePasswordAsync() is null)return;
-                Notify(T("密码已确认，请重新拖动条目。","Password confirmed. Drag the item again."),InfoBarSeverity.Informational);
+                e.Cancel=true;
+                if(await EnsurePasswordAsync()!=null)Notify(T("密码已确认，请重新拖动条目。","Password confirmed. Drag the item again."),InfoBarSeverity.Informational);
                 return;
             }
-            var key=password??"";
             var selected=ExpandSelectedEntries(rows);
-            if(selected.Count==0)return;
-            dragPayload=new(currentArchive,selected,rows,key);
-            StatusText.Text=rows.Count==1?T("拖动以解压 "+rows[0].Name,"Drag to extract "+rows[0].Name):T($"拖动以解压 {rows.Count} 项",$"Drag to extract {rows.Count} items");
-            Notify(T("正在拖动内容。移动到目标窗口后松开鼠标。","Dragging archive contents. Move to a target window and release the mouse."),InfoBarSeverity.Informational);
-            temp=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"New7z-drag-"+Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(temp);
-            var dropped=engine.DragArchive(currentArchive,selected,rows,temp,Hwnd,key,p=>
-            {
-                if(p.Total>0)StatusText.Text=T($"正在准备拖动内容：{p.Completed*100/p.Total}%",$"Preparing drag contents: {p.Completed*100/p.Total}%");
-                else StatusText.Text=T("正在准备拖动内容…","Preparing drag contents…");
-            });
-            Notify(dropped?T("目标已接收拖动内容。","The target received the dragged items."):T("拖动已取消，没有目标接收内容。","The drag was cancelled; no target accepted the items."),dropped?InfoBarSeverity.Success:InfoBarSeverity.Informational);
+            if(selected.Count==0){e.Cancel=true;return;}
+            dragTemp=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"New7z-drag-"+Guid.NewGuid().ToString("N"));
+            var package=WinRT.MarshalInspectable<DataPackage>.FromManaged(e.Data);
+            try{dragData=engine.CreateDragData(package,archive,selected,rows,dragTemp,Hwnd,password);}
+            finally{System.Runtime.InteropServices.Marshal.Release(package);}
+            e.Data.RequestedOperation=DataPackageOperation.Copy;
+            e.Data.Properties.Title=rows.Length==1?rows[0].Name:T($"{rows.Length} 个项目",$"{rows.Length} items");
+            if(dragVerificationReport!=null)File.AppendAllText(dragVerificationReport+".trace","Formats="+string.Join("|",e.Data.GetView().AvailableFormats)+Environment.NewLine);
+            StatusText.Text=T("拖动以解压；松开鼠标后开始。","Drag to extract; extraction starts on release.");
+        }
+        catch(Exception ex)
+        {
+            e.Cancel=true;
+            Notify(ex.Message,InfoBarSeverity.Error);
+            FinishArchiveDrag();
+        }
+    }
+    private void FileListDragItemsCompleted(ListViewBase sender,DragItemsCompletedEventArgs e)
+    {
+        if(dragVerificationReport!=null)File.AppendAllText(dragVerificationReport+".trace","Completed="+e.DropResult+Environment.NewLine);
+        var completedDrag=dragData;if(completedDrag==null)return;
+        try
+        {
+            completedDrag.ThrowIfFailed();
+            var accepted=e.DropResult!=DataPackageOperation.None||completedDrag.WasTransferred;
+            Notify(accepted?T("目标已接收拖动内容。","The target received the dragged items."):T("拖动已取消，没有目标接收内容。","The drag was cancelled; no target accepted the items."),accepted?InfoBarSeverity.Success:InfoBarSeverity.Informational);
         }
         catch(ArchivePasswordException){password=null;Notify(T("密码不正确，请重新拖动并输入正确密码。","The password was incorrect. Drag again and enter the correct password."),InfoBarSeverity.Warning);}
+        catch(OperationCanceledException){Notify(T("拖动解压已取消。","Drag extraction was cancelled."),InfoBarSeverity.Informational);}
         catch(Exception ex){Notify(ex.Message,InfoBarSeverity.Error);}
-        finally
-        {
-            if(temp!=null)ScheduleTempCleanup(temp);
-            dragGestureActive=false;dragPayload=null;
-            StatusText.Text=T("就绪","Ready");
-        }
+        finally{FinishArchiveDrag();}
+    }
+    private void FinishArchiveDrag()
+    {
+        if(dragVerificationReport!=null)File.AppendAllText(dragVerificationReport+".trace",engine.GetDragDiagnostics()+Environment.NewLine);
+        dragData?.Dispose();dragData=null;
+        if(dragTemp!=null){ScheduleTempCleanup(dragTemp);dragTemp=null;}
+        StatusText.Text=T("就绪","Ready");
     }
     private static void ScheduleTempCleanup(string path)
     {
@@ -594,10 +588,10 @@ public sealed partial class MainWindow:Window
         var language=new ComboBox{Header=T("界面语言","Language"),ItemsSource=new[]{T("跟随系统","Follow system"),"简体中文","English"},SelectedIndex=Math.Max(0,Array.IndexOf(LanguageCodes,settings.Language)),MinWidth=240};
         language.SelectionChanged+=(_,_)=>{settings.Language=LanguageCodes[language.SelectedIndex];settings.Save();ApplyLanguage();RenderPage();};
         panel.Children.Add(Card(language));
-        AddExplorerSettings(panel);AddUpdateSettings(panel);
+        AddCompressionSettings(panel);AddExplorerSettings(panel);AddUpdateSettings(panel);
         var theme=new ComboBox{Header=T("应用主题","Theme"),ItemsSource=new[]{T("跟随系统","System"),T("浅色","Light"),T("深色","Dark")},SelectedIndex=Math.Max(0,Array.IndexOf(ThemeCodes,NormalizeTheme(settings.Theme))),MinWidth=240};theme.SelectionChanged+=(_,_)=>{settings.Theme=ThemeCodes[theme.SelectedIndex];settings.Save();ApplyTheme();};panel.Children.Add(Card(theme));
         AddIconSettings(panel);
-        var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text(T("MIT 开源许可","MIT open-source license"),14));about.Children.Add(Text(T("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。","Local 7-Zip 26.05 engine · no separate 7-Zip installation needed\nCreates 7z/ZIP; other formats are read according to engine support. RAR is extract-only.\nPreview is read-only; images up to 32 MiB and text up to 2 MiB."),12));panel.Children.Add(Card(about));ShowContent(new ScrollViewer{Content=panel});
+        var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text(T("MIT 开源许可","MIT open-source license"),14));about.Children.Add(Text(T("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP/TAR 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。","Local 7-Zip 26.05 engine · no separate 7-Zip installation needed\nCreates 7z/ZIP/TAR; other formats are read according to engine support. RAR is extract-only.\nPreview is read-only; images up to 32 MiB and text up to 2 MiB."),12));panel.Children.Add(Card(about));ShowContent(new ScrollViewer{Content=panel});
     }
     private bool closingApproved;
     private async void OnClosing(AppWindow sender,AppWindowClosingEventArgs args)

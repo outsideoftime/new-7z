@@ -41,7 +41,7 @@
 | Windows Compression Menu Setting | MainWindow.Settings / WindowsCompressMenuSettingsStore | 本文件 | 当前用户、Windows 11 24H2+「压缩到」菜单开关；保存前备份、恢复原注册表值 | test.ps1 隔离注册表键 15 项 + 安装脚本恢复 7 项；真实 Explorer 菜单待验收 |
 | Windows Integration | MainWindow.Integration / installer/Integrate-Shell.ps1 | docs/安装包发布.md | 注册修复按钮；Windows 默认应用选择器由系统拥有 | test-installer.ps1 / published UI diagnostic |
 | Archive Editing | MainWindow.ShowArchive / ArchiveEngine.ModifyAsync | 本文件 | 仅 7z/ZIP 添加、删除与同名替换；临时文件成功后替换原包 | tests/New7z.Integration |
-| Drag Extraction | MainWindow.FileListDragStarting | 本文件 | 拖到资源管理器或桌面文件夹；临时目录准备后由系统复制 | 人工拖动检查 / 临时目录清理 |
+| Drag Extraction | MainWindow.FileListDragItemsStarting / ArchiveEngine.CreateDragData / native DragDataObject | 本文件 | WinUI 负责手势、选择与鼠标反馈；IDataObjectProvider 接入原生延迟数据；按住鼠标悬停不解压，释放后准备真实 CF_HDROP 条目，由系统复制/移动临时文件；准备阶段显示可取消进度 | test-drag-extraction.ps1 / --verify-drag-ui / 真实鼠标验证 / 临时目录清理 |
 | App Update | MainWindow.Updates / GitHubUpdateChecker | docs/安装包发布.md | 启动自动检查、手动检查、SHA-256 校验、确认后安装 | 真实 GitHub API 探针 / 发布版 `--verify-ui` |
 
 Date 不适用：只读示例日期，无日期输入控件。引擎 API、登录、远程请求、真实磁盘修改本轮不适用。

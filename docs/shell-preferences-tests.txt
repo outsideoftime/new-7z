@@ -1,5 +1,10 @@
 PASS default file commands
 PASS default archive commands
+PASS zh menu titles follow app language
+PASS zh menu tooltip follows app language
+PASS en menu titles follow app language
+PASS en menu tooltip follows app language
+PASS en archive menu titles follow app language
 PASS master switch hides menu
 PASS file command filtering
 PASS no relevant archive command hides root

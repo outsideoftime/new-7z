@@ -27,7 +27,7 @@ foreach($path in $ownKeys){
 $valueBackups=@()
 $sharedValues=@([pscustomobject]@{Path='Software\RegisteredApplications';Name='New7z'})
 $sharedValues+=@('.7z','.zip','.rar','.tar','.gz','.xz','.bz2','.iso' | ForEach-Object {[pscustomobject]@{Path="Software\Classes\$_\OpenWithProgids";Name='New7z.Archive'}})
-$sharedValues+=@([pscustomobject]@{Path='Software\New7z\Explorer';Name='HideWindowsCompressMenu'},[pscustomobject]@{Path='Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked';Name='{7AE6900F-6EB0-44A2-9CA1-DB2F7EF352AF}'})
+$sharedValues+=@([pscustomobject]@{Path='Software\New7z\Explorer';Name='HideWindowsCompressMenu'},[pscustomobject]@{Path='Software\New7z\Explorer';Name='Language'},[pscustomobject]@{Path='Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked';Name='{7AE6900F-6EB0-44A2-9CA1-DB2F7EF352AF}'})
 foreach($entry in $sharedValues){
  $key=$registry.OpenSubKey($entry.Path);$had=$key -and $key.GetValueNames().Contains($entry.Name)
  $valueBackups+=,[pscustomobject]@{Path=$entry.Path;Name=$entry.Name;Had=$had;Value=$(if($had){$key.GetValue($entry.Name)});Kind=$(if($had){$key.GetValueKind($entry.Name)})}
@@ -42,7 +42,7 @@ if(Test-Path -LiteralPath $shortcut){Copy-Item -LiteralPath $shortcut -Destinati
 function Preferences([switch]$ExceptCompressMenu) {
  $key=$registry.OpenSubKey('Software\New7z\Explorer')
  if(!$key){return '<absent>'}
- try{$names=@($key.GetValueNames() | Sort-Object);if($ExceptCompressMenu){$names=@($names | Where-Object {$_ -ne 'HideWindowsCompressMenu'})};return (@($names | ForEach-Object {"$_=$($key.GetValue($_))"}) -join ';')}finally{$key.Dispose()}
+ try{$names=@($key.GetValueNames() | Sort-Object);if($ExceptCompressMenu){$names=@($names | Where-Object {$_ -ne 'HideWindowsCompressMenu' -and $_ -ne 'Language'})};return (@($names | ForEach-Object {"$_=$($key.GetValue($_))"}) -join ';')}finally{$key.Dispose()}
 }
 $preferencesBefore=Preferences -ExceptCompressMenu
 $appProcess=$null
@@ -118,6 +118,8 @@ try{
  Check ($appProcess.ExitCode -eq 0 -and (Test-Path $reportPath)) 'installed app starts with bundled runtime and no SDK on PATH'
  $appProcess=$null;$report=Get-Content $reportPath -Raw | ConvertFrom-Json
  Check ($report.Result -eq 'PASS' -and $report.ArchiveBinding -and $report.Text -and $report.Image) 'trimmed settings, XAML bindings, text and image preview'
+ $menuLanguage=(Get-ItemProperty -LiteralPath 'HKCU:/Software/New7z/Explorer' -Name Language -ErrorAction SilentlyContinue).Language
+ Check ($menuLanguage -in @('zh','en')) 'app records Explorer menu language'
  $oldRuntime=Join-Path $install 'Versions/0.0.9-oldtest'
  New-Item -ItemType Directory -Path $oldRuntime -Force | Out-Null
  Set-Content -LiteralPath (Join-Path $oldRuntime 'old.txt') -Value 'old version'
@@ -131,6 +133,7 @@ try{
  $state=Get-Content -LiteralPath "$install/installation.json" -Raw | ConvertFrom-Json
  Check ($state.MenuMode -eq 'classic') 'compatible-only install works without modern package'
  Check ((Get-ItemPropertyValue -LiteralPath $uninstallRegistry -Name DisplayVersion) -eq $manifest.Version) 'upgrade retains one test uninstall registration'
+ Check (((Get-ItemProperty -LiteralPath 'HKCU:/Software/New7z/Explorer' -Name Language -ErrorAction SilentlyContinue).Language) -eq $menuLanguage) 'upgrade preserves Explorer menu language'
  Uninstall
  Check (!(Test-Path -LiteralPath $uninstallRegistry)) 'uninstall removes only test product registration'
  foreach($path in @('HKCU:/Software/Classes/*/shell/New7z','HKCU:/Software/Classes/Directory/shell/New7z','HKCU:/Software/Classes/New7z.Archive','HKCU:/Software/New7z/Capabilities')){Check (!(Test-Path -LiteralPath $path)) "uninstall removes $path"}
@@ -138,6 +141,7 @@ try{
  $key=$registry.OpenSubKey('Software\RegisteredApplications');try{Check (!$key.GetValueNames().Contains('New7z')) 'uninstall removes owned Default Apps entry'}finally{$key.Dispose()}
  Check (!(Test-Path -LiteralPath "$runtime/New7z.App.exe")) 'uninstall removes installed executable'
  Check ((Preferences -ExceptCompressMenu) -eq $preferencesBefore) 'upgrade and uninstall preserve menu preferences'
+ Check (((Get-ItemProperty -LiteralPath 'HKCU:/Software/New7z/Explorer' -Name Language -ErrorAction SilentlyContinue).Language) -eq $menuLanguage) 'uninstall preserves Explorer menu language'
  $compressPreference=$registry.OpenSubKey('Software\New7z\Explorer')
  try{$compressValue=if($compressPreference){$compressPreference.GetValue('HideWindowsCompressMenu')}else{$null}}finally{if($compressPreference){$compressPreference.Dispose()}}
  Check ($null -eq $compressValue -or $compressValue -eq 0) 'uninstall clears the Windows compression menu preference'

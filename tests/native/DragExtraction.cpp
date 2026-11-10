@@ -53,7 +53,7 @@ int wmain(int argc,wchar_t** argv){
       const wchar_t* sources[]={sourceRoot.c_str(),sourceNested.c_str(),sourceEmpty.c_str(),sourceZero.c_str()};
       // Deliberately omit explicit parent entries, as many ZIP files do.
       const wchar_t* names[]={L"根文件.txt",L"目录/子目录/文件.txt",L"空目录",L"零字节.txt"};
-      check(SUCCEEDED(NzCreate(archive.c_str(),zip,5,nullptr,0,sources,names,4,nullptr,nullptr)),"create archive fixture");
+      check(SUCCEEDED(NzCreate(archive.c_str(),zip,5,nullptr,nullptr,0,sources,names,4,nullptr,nullptr)),"create archive fixture");
       UInt32 archiveIndices[4]{};
       {Archive opened(nullptr,nullptr,nullptr);check(SUCCEEDED(opened.open(archive.c_str())),"open drag fixture");UInt32 count=0;opened.archive->GetNumberOfItems(&count);
         for(UInt32 i=0;i<count;++i){Variant name;opened.archive->GetProperty(i,kpidPath,&name.v);if(name.v.vt!=VT_BSTR)continue;std::wstring path=name.v.bstrVal;std::replace(path.begin(),path.end(),L'\\',L'/');for(size_t n=0;n<4;++n)if(path==names[n])archiveIndices[n]=i;}}

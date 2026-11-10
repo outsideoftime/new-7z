@@ -48,7 +48,7 @@ public sealed partial class MainWindow:Window
         InitializeComponent();Title="New7z";ExtendsContentIntoTitleBar=true;SetTitleBar(TitleBar);
         SystemBackdrop=new MicaBackdrop();AppWindow.Resize(new Windows.Graphics.SizeInt32(1320,880));
         AppWindow.Closing+=OnClosing;
-        initialized=true;ApplyLanguage();ApplyTheme();ApplyIcon();WindowAppearance.ApplyIcon(this);ShowHome();
+        initialized=true;ApplyLanguage();SaveExplorerLanguage();ApplyTheme();ApplyIcon();WindowAppearance.ApplyIcon(this);ShowHome();
         Root.AllowDrop=true;Root.DragOver+=(_,e)=>UpdateDragOver(e);Root.Drop+=FilesDropped;
         foreach(var stale in Directory.EnumerateDirectories(System.IO.Path.GetTempPath(),"New7z-drag-*"))
         {
@@ -82,6 +82,7 @@ public sealed partial class MainWindow:Window
         if(Navigation.SettingsItem is NavigationViewItem settingsItem)settingsItem.Content=T("设置","Settings");
         StatusText.Text=T("就绪 · 本地 7-Zip 26.05 引擎","Ready · local 7-Zip 26.05 engine");
     }
+    private void SaveExplorerLanguage()=>ExplorerPreferencesStore.SetLanguage(Loc.Language);
     private string FormatIconPath(string name)
     {
         name=name.TrimStart('.').ToLowerInvariant();
@@ -586,7 +587,7 @@ public sealed partial class MainWindow:Window
     {
         var panel=Stack(22);panel.Children.Add(Text(T("设置","Settings"),28,true));
         var language=new ComboBox{Header=T("界面语言","Language"),ItemsSource=new[]{T("跟随系统","Follow system"),"简体中文","English"},SelectedIndex=Math.Max(0,Array.IndexOf(LanguageCodes,settings.Language)),MinWidth=240};
-        language.SelectionChanged+=(_,_)=>{settings.Language=LanguageCodes[language.SelectedIndex];settings.Save();ApplyLanguage();RenderPage();};
+        language.SelectionChanged+=(_,_)=>{settings.Language=LanguageCodes[language.SelectedIndex];settings.Save();ApplyLanguage();SaveExplorerLanguage();RenderPage();};
         panel.Children.Add(Card(language));
         AddCompressionSettings(panel);AddExplorerSettings(panel);AddUpdateSettings(panel);
         var theme=new ComboBox{Header=T("应用主题","Theme"),ItemsSource=new[]{T("跟随系统","System"),T("浅色","Light"),T("深色","Dark")},SelectedIndex=Math.Max(0,Array.IndexOf(ThemeCodes,NormalizeTheme(settings.Theme))),MinWidth=240};theme.SelectionChanged+=(_,_)=>{settings.Theme=ThemeCodes[theme.SelectedIndex];settings.Save();ApplyTheme();};panel.Children.Add(Card(theme));

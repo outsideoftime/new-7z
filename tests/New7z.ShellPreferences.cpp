@@ -4,6 +4,7 @@
 #include <shobjidl.h>
 #include <shlobj.h>
 #include <string>
+#include <vector>
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
@@ -13,6 +14,16 @@ static const CLSID rootId={0x642cf40a,0x831e,0x42a9,{0xac,0x63,0xf5,0xa0,0xab,0x
 static const CLSID classicId={0x642cf40a,0x831e,0x42a9,{0xac,0x63,0xf5,0xa0,0xab,0xdd,0x5c,0x18}};
 static IShellItemArray* items(const std::wstring& path){IShellItem* item=nullptr;IShellItemArray* result=nullptr;auto hr=SHCreateItemFromParsingName(path.c_str(),nullptr,IID_PPV_ARGS(&item));if(FAILED(hr)){std::wcerr<<path<<L" HRESULT "<<std::hex<<hr<<L"\n";throw std::runtime_error("shell item");}hr=SHCreateShellItemArrayFromShellItem(item,IID_PPV_ARGS(&result));item->Release();if(FAILED(hr))throw std::runtime_error("shell array");return result;}
 static int count(IExplorerCommand* command){IEnumExplorerCommand* values=nullptr;if(FAILED(command->EnumSubCommands(&values)))throw std::runtime_error("enumeration");int total=0;IExplorerCommand* child=nullptr;while(values->Next(1,&child,nullptr)==S_OK){++total;child->Release();}values->Release();return total;}
+static std::vector<std::wstring> titles(IExplorerCommand* command,IShellItemArray* selection){
+ IEnumExplorerCommand* values=nullptr;if(FAILED(command->EnumSubCommands(&values)))throw std::runtime_error("title enumeration");
+ std::vector<std::wstring> result;IExplorerCommand* child=nullptr;
+ while(values->Next(1,&child,nullptr)==S_OK){PWSTR text=nullptr;auto hr=child->GetTitle(selection,&text);result.emplace_back(SUCCEEDED(hr)&&text?text:L"");if(text)CoTaskMemFree(text);child->Release();}
+ values->Release();return result;
+}
+static bool titlesAre(IExplorerCommand* command,IShellItemArray* selection,std::initializer_list<const wchar_t*> expected){
+ auto actual=titles(command,selection);return actual.size()==expected.size()&&std::equal(actual.begin(),actual.end(),expected.begin());
+}
+static std::wstring tooltip(IExplorerCommand* command){PWSTR text=nullptr;auto hr=command->GetToolTip(nullptr,&text);std::wstring result=SUCCEEDED(hr)&&text?text:L"";if(text)CoTaskMemFree(text);return result;}
 static bool visible(IExplorerCommand* command,IShellItemArray* selection){EXPCMDSTATE state=ECS_HIDDEN;return SUCCEEDED(command->GetState(selection,FALSE,&state))&&state==ECS_ENABLED;}
 int wmain(int argc,wchar_t** argv){
  if(argc!=3)return 2;
@@ -49,6 +60,14 @@ int wmain(int argc,wchar_t** argv){
   check(visible(command,archive)&&count(command)==5,"default archive commands");
   if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\New7z\\Explorer",0,nullptr,0,KEY_ALL_ACCESS,nullptr,&preferences,nullptr)!=ERROR_SUCCESS)throw std::runtime_error("preferences");
   auto write=[&](const wchar_t* name,DWORD value){if(RegSetValueExW(preferences,name,0,REG_DWORD,reinterpret_cast<BYTE*>(&value),sizeof(value))!=ERROR_SUCCESS)throw std::runtime_error("write settings");};
+  auto writeLanguage=[&](const wchar_t* value){if(RegSetValueExW(preferences,L"Language",0,REG_SZ,reinterpret_cast<const BYTE*>(value),DWORD((wcslen(value)+1)*sizeof(wchar_t)))!=ERROR_SUCCESS)throw std::runtime_error("write language");};
+  writeLanguage(L"zh");
+  check(visible(command,file)&&titlesAre(command,file,{L"新建压缩包…",L"压缩为 7Z",L"压缩为 ZIP",L"压缩为 TAR"}),"zh menu titles follow app language");
+  check(tooltip(command)==L"使用 New7z 压缩或解压文件","zh menu tooltip follows app language");
+  writeLanguage(L"en");
+  check(titlesAre(command,file,{L"New archive…",L"Compress to 7Z",L"Compress to ZIP",L"Compress to TAR"}),"en menu titles follow app language");
+  check(tooltip(command)==L"Compress or extract files with New7z","en menu tooltip follows app language");
+  check(visible(command,archive)&&titlesAre(command,archive,{L"Open with New7z",L"Extract to named folder",L"Extract to…",L"Extract here",L"Test archive"}),"en archive menu titles follow app language");
   write(L"MenuEnabled",0);check(!visible(command,file)&&count(command)==0,"master switch hides menu");
   write(L"MenuEnabled",1);write(L"Commands",128);check(visible(command,file)&&count(command)==1,"file command filtering");
   check(!visible(command,archive)&&count(command)==0,"no relevant archive command hides root");

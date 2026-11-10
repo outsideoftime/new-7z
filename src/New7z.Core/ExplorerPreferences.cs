@@ -39,6 +39,16 @@ public sealed class ExplorerPreferencesStore
         key.SetValue("MenuEnabled",value.MenuEnabled?1:0,RegistryValueKind.DWord);
         key.SetValue("HideWindowsCompressMenu",value.HideWindowsCompressMenu?1:0,RegistryValueKind.DWord);
     }
+
+    public static void SetLanguage(string language)
+    {
+        if(language is not ("zh" or "en"))throw new ArgumentOutOfRangeException(nameof(language));
+        using(var existing=Registry.CurrentUser.OpenSubKey(RegistryPath,false))
+            if(string.Equals(existing?.GetValue("Language") as string,language,StringComparison.Ordinal))return;
+        using var key=Registry.CurrentUser.CreateSubKey(RegistryPath,true)??throw new IOException(Loc.T("无法保存资源管理器菜单语言。","Could not save the Explorer menu language."));
+        key.SetValue("Language",language,RegistryValueKind.String);
+        NativeMethods.NotifyShellAssociationsChanged();
+    }
 }
 
 // Blocks only the current user's Windows 11 "Compress to" shell command. The

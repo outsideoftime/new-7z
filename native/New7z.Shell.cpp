@@ -24,6 +24,7 @@ static DWORD preference(const wchar_t* name,DWORD fallback){DWORD value=0,bytes=
 static constexpr DWORD kAllCommands=511;
 // 255 was "all commands" before the TAR command existed; expand it once.
 static DWORD commands(){DWORD value=preference(L"Commands",kAllCommands),version=preference(L"CommandsVersion",0);if(value==255&&version<2)value=kAllCommands;return value&kAllCommands;}
+static bool english(){wchar_t language[8]{};DWORD bytes=sizeof(language);if(RegGetValueW(HKEY_CURRENT_USER,L"Software\\New7z\\Explorer",L"Language",RRF_RT_REG_SZ,nullptr,language,&bytes)==ERROR_SUCCESS)return _wcsicmp(language,L"en")==0;return PRIMARYLANGID(GetUserDefaultUILanguage())!=LANG_CHINESE;}
 static std::wstring appPath(){wchar_t path[32768];GetModuleFileNameW(moduleHandle,path,32768);PathRemoveFileSpecW(path);return std::wstring(path)+L"\\New7z.App.exe";}
 static std::vector<std::wstring> getPaths(IShellItemArray* items){std::vector<std::wstring> paths;if(!items)return paths;DWORD count=0;items->GetCount(&count);if(count>10000)return paths;for(DWORD i=0;i<count;i++){IShellItem* item=nullptr;PWSTR path=nullptr;if(SUCCEEDED(items->GetItemAt(i,&item))){if(SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))){paths.emplace_back(path);CoTaskMemFree(path);}item->Release();}}return paths;}
 static bool archive(const std::wstring& path){auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY))return false;auto ext=std::wstring(PathFindExtensionW(path.c_str()));std::transform(ext.begin(),ext.end(),ext.begin(),towlower);return ext==L".7z"||ext==L".zip"||ext==L".rar"||ext==L".tar"||ext==L".gz"||ext==L".xz"||ext==L".bz2"||ext==L".iso";}
@@ -68,14 +69,14 @@ public:
  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void** out)override{*out=nullptr;if(id==IID_IUnknown||id==__uuidof(IExplorerCommand))*out=this;else return E_NOINTERFACE;AddRef();return S_OK;}
  ULONG STDMETHODCALLTYPE AddRef()override{return ++refs;}ULONG STDMETHODCALLTYPE Release()override{auto n=--refs;if(!n)delete this;return n;}
  HRESULT STDMETHODCALLTYPE GetTitle(IShellItemArray* items,PWSTR* title)override{
-  if(items)cached=getPaths(items);std::wstring text=L"New7z";
-  if(action==L"open")text=L"用 New7z 打开";else if(action==L"extract-named")text=cached.size()>1?L"分别解压到各自文件夹":L"解压到同名文件夹";
-  else if(action==L"extract-to")text=L"解压到…";else if(action==L"extract-here")text=L"解压到当前文件夹";else if(action==L"test")text=L"测试完整性";
-  else if(action==L"create")text=L"新建压缩包…";else if(action==L"create-7z")text=L"压缩为 7Z";else if(action==L"create-zip")text=L"压缩为 ZIP";else if(action==L"create-tar")text=L"压缩为 TAR";
+  if(items)cached=getPaths(items);const bool en=english();std::wstring text=L"New7z";
+  if(action==L"open")text=en?L"Open with New7z":L"用 New7z 打开";else if(action==L"extract-named")text=cached.size()>1?(en?L"Extract each to its own folder":L"分别解压到各自文件夹"):(en?L"Extract to named folder":L"解压到同名文件夹");
+  else if(action==L"extract-to")text=en?L"Extract to…":L"解压到…";else if(action==L"extract-here")text=en?L"Extract here":L"解压到当前文件夹";else if(action==L"test")text=en?L"Test archive":L"测试完整性";
+  else if(action==L"create")text=en?L"New archive…":L"新建压缩包…";else if(action==L"create-7z")text=en?L"Compress to 7Z":L"压缩为 7Z";else if(action==L"create-zip")text=en?L"Compress to ZIP":L"压缩为 ZIP";else if(action==L"create-tar")text=en?L"Compress to TAR":L"压缩为 TAR";
   return SHStrDupW(text.c_str(),title);
  }
  HRESULT STDMETHODCALLTYPE GetIcon(IShellItemArray*,PWSTR* icon)override{wchar_t path[32768];GetModuleFileNameW(moduleHandle,path,32768);return SHStrDupW((std::wstring(path)+L",-101").c_str(),icon);}
- HRESULT STDMETHODCALLTYPE GetToolTip(IShellItemArray*,PWSTR* tooltip)override{return SHStrDupW(L"使用 New7z 压缩或解压文件",tooltip);}
+ HRESULT STDMETHODCALLTYPE GetToolTip(IShellItemArray*,PWSTR* tooltip)override{return SHStrDupW(english()?L"Compress or extract files with New7z":L"使用 New7z 压缩或解压文件",tooltip);}
  HRESULT STDMETHODCALLTYPE GetCanonicalName(GUID* id)override{*id=canonicalBase;id->Data1^=commandBit(action);return S_OK;}
  HRESULT STDMETHODCALLTYPE GetState(IShellItemArray* items,BOOL,EXPCMDSTATE* state)override{if(items)cached=getPaths(items);auto mask=commands()&selectionMask(cached);*state=preference(L"MenuEnabled",1)&&(action.empty()?mask!=0:(mask&commandBit(action))!=0)?ECS_ENABLED:ECS_HIDDEN;return S_OK;}
  HRESULT STDMETHODCALLTYPE Invoke(IShellItemArray* items,IBindCtx*)override{try{if(!preference(L"MenuEnabled",1)||!(commands()&commandBit(action)))return E_ACCESSDENIED;return dispatch(action,getPaths(items));}catch(...){return E_OUTOFMEMORY;}}

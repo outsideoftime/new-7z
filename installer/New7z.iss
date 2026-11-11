@@ -1,5 +1,5 @@
 #ifndef AppVersion
- #define AppVersion "0.1.29"
+ #define AppVersion "1.0.0"
 #endif
 #ifndef BuildId
  #error BuildId is required

@@ -15,7 +15,7 @@
   -->
   <Identity Name="B8EC7EE8.New7z"
             Publisher="CN=7C74DB3A-AD98-46DA-A414-D5D981956821"
-            Version="1.0.0.0"
+            Version="1.0.1.0"
             ProcessorArchitecture="x64" />
 
   <Properties>

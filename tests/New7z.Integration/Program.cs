@@ -82,10 +82,19 @@ try
         var entry=entries.Single(e=>e.Name=="说明.txt");var bytes=await engine.ReadAsync(archive,entry);
         Assert(ArchiveEngine.DecodeText(bytes).Contains("你好"),format+" read text");
         var image=await engine.ReadAsync(archive,entries.Single(e=>e.Name=="image.png"));Assert(image[0]==137,format+" read PNG");
-        var folder=Path.Combine(root,"extract-"+format);var result=await engine.ExtractAsync(archive,entries,folder);
+        var folder=Path.Combine(root,"extract-"+format);var result=await engine.ExtractAsync(archive,entries.Reverse().ToArray(),folder);
         Assert(result.Extracted==3,format+" extract count");
         Assert((await File.ReadAllBytesAsync(Path.Combine(folder,Path.GetFileName(source),"data.bin"))).SequenceEqual(original),format+" binary roundtrip");
         var renamed=await engine.ExtractAsync(archive,[entry],folder);Assert(File.Exists(Path.Combine(folder,Path.GetFileName(source),"说明 (2).txt")),format+" safe rename conflict");
+        var extractedText=Path.Combine(folder,Path.GetFileName(source),"说明.txt");await File.WriteAllTextAsync(extractedText,"keep existing");
+        var skipped=await engine.ExtractAsync(archive,entries,folder,ConflictPolicy.Skip);
+        Assert(skipped is {Extracted:0,Skipped:3}&&await File.ReadAllTextAsync(extractedText)=="keep existing",format+" batch skip preserves existing files");
+        var replacedFiles=await engine.ExtractAsync(archive,entries,folder,ConflictPolicy.Replace);
+        Assert(replacedFiles is {Extracted:3,Skipped:0}&&(await File.ReadAllTextAsync(extractedText)).Contains("你好"),format+" batch replace commits verified files");
+        Assert(entry.FileTime==File.GetLastWriteTimeUtc(extractedText).ToFileTimeUtc(),format+" extraction preserves file time");
+        var subset=entries.Where(e=>!e.IsDirectory&&e.Name!="data.bin").Reverse().ToArray();var subsetFolder=Path.Combine(root,"subset-"+format);
+        var subsetResult=await engine.ExtractAsync(archive,subset,subsetFolder);
+        Assert(subsetResult.Extracted==2&&!File.Exists(Path.Combine(subsetFolder,Path.GetFileName(source),"data.bin")),format+" unordered batch subset skips solid dependencies");
         await engine.TestAsync(archive);checks.Add(format+" integrity test");
         if(format=="zip")
         {
@@ -139,6 +148,53 @@ try
     var encryptedItems=await engine.ListAsync(encrypted,"password-测试");Assert(encryptedItems.Count>0,"encrypted header open");
     try{await engine.ReadAsync(encrypted,encryptedItems.First(e=>!e.IsDirectory),"wrong");throw new Exception("Wrong password accepted");}catch(ArchivePasswordException){checks.Add("wrong password rejected");}
     var encryptedZip=Path.Combine(root,"加密.zip");await engine.CreateAsync(encryptedZip,[text],"zip",password:"secret");var zipItems=await engine.ListAsync(encryptedZip);Assert((await engine.ReadAsync(encryptedZip,zipItems.Single(),"secret")).Length>0,"ZIP AES read");
+    foreach(var encryptedCase in new[]{(encrypted,encryptedItems,"password-测试"),(encryptedZip,zipItems,"secret")})
+    {
+        var output=Path.Combine(root,"encrypted-extract-"+Path.GetExtension(encryptedCase.Item1));
+        var extracted=await engine.ExtractAsync(encryptedCase.Item1,encryptedCase.Item2,output,password:encryptedCase.Item3);
+        Assert(extracted.Extracted==encryptedCase.Item2.Count(e=>!e.IsDirectory),"batch encrypted extract "+Path.GetExtension(encryptedCase.Item1));
+        try{await engine.ExtractAsync(encryptedCase.Item1,encryptedCase.Item2,output,ConflictPolicy.Replace,"wrong");throw new Exception("Batch accepted wrong password");}
+        catch(ArchivePasswordException){Assert(!Directory.EnumerateFiles(output,"*.partial",SearchOption.AllDirectories).Any(),"wrong password batch cleans temporary files "+Path.GetExtension(encryptedCase.Item1));}
+    }
+    var duplicateZip=Path.Combine(root,"duplicates.zip");
+    using(var zip=ZipFile.Open(duplicateZip,ZipArchiveMode.Create))foreach(var content in new[]{"first","second"}){using var writer=new StreamWriter(zip.CreateEntry("重复.txt").Open());writer.Write(content);}
+    var duplicateEntries=await engine.ListAsync(duplicateZip);
+    foreach(var policy in new[]{ConflictPolicy.Rename,ConflictPolicy.Skip,ConflictPolicy.Replace})
+    {
+        var output=Path.Combine(root,"duplicates-"+policy);var extracted=await engine.ExtractAsync(duplicateZip,duplicateEntries.Reverse().ToArray(),output,policy);
+        Assert(await File.ReadAllTextAsync(Path.Combine(output,"重复.txt"))==(policy==ConflictPolicy.Replace?"second":"first"),"duplicate archive names "+policy);
+        Assert(policy==ConflictPolicy.Skip?extracted is {Extracted:1,Skipped:1}:extracted is {Extracted:2,Skipped:0},"duplicate archive result "+policy);
+        if(policy==ConflictPolicy.Rename)Assert(await File.ReadAllTextAsync(Path.Combine(output,"重复 (2).txt"))=="second","duplicate names reserve committed rename targets");
+    }
+    var corruptZip=Path.Combine(root,"corrupt.zip");var corruptPayload=RandomNumberGenerator.GetBytes(8192);
+    using(var zip=ZipFile.Open(corruptZip,ZipArchiveMode.Create))
+    {
+        using(var writer=new StreamWriter(zip.CreateEntry("good.txt",CompressionLevel.NoCompression).Open()))writer.Write("verified first file");
+        using var bad=zip.CreateEntry("bad.bin",CompressionLevel.NoCompression).Open();bad.Write(corruptPayload);
+    }
+    var corruptEntries=await engine.ListAsync(corruptZip);var corruptBytes=await File.ReadAllBytesAsync(corruptZip);
+    var payloadOffset=corruptBytes.AsSpan().IndexOf(corruptPayload);Assert(payloadOffset>=0,"locate stored ZIP corruption fixture");corruptBytes[payloadOffset]^=0xff;await File.WriteAllBytesAsync(corruptZip,corruptBytes);
+    var corruptOutput=Path.Combine(root,"corrupt-output");Directory.CreateDirectory(corruptOutput);await File.WriteAllTextAsync(Path.Combine(corruptOutput,"bad.bin"),"keep original");
+    try{await engine.ExtractAsync(corruptZip,corruptEntries,corruptOutput,ConflictPolicy.Replace);throw new Exception("Corrupt ZIP committed");}
+    catch(InvalidDataException)
+    {
+        Assert(await File.ReadAllTextAsync(Path.Combine(corruptOutput,"bad.bin"))=="keep original","CRC failure preserves replacement target");
+        Assert(await File.ReadAllTextAsync(Path.Combine(corruptOutput,"good.txt"))=="verified first file","CRC failure keeps previously verified output");
+        Assert(!Directory.EnumerateFiles(corruptOutput,"*.partial").Any(),"CRC failure removes active temporary file");
+    }
+    var cancellationSource=Path.Combine(root,"cancel-large.bin");await File.WriteAllBytesAsync(cancellationSource,new byte[64*1024*1024]);
+    var cancellationArchive=Path.Combine(root,"cancel-extraction.zip");await engine.CreateAsync(cancellationArchive,[cancellationSource],"zip",0);
+    var cancellationEntries=await engine.ListAsync(cancellationArchive);var cancellationOutput=Path.Combine(root,"cancel-extraction");Directory.CreateDirectory(cancellationOutput);
+    await File.WriteAllTextAsync(Path.Combine(cancellationOutput,"cancel-large.bin"),"keep original");
+    using(var extractionCancellation=new CancellationTokenSource())
+    using(var watcher=new FileSystemWatcher(cancellationOutput,"*.partial")){watcher.Created+=(_,_)=>extractionCancellation.Cancel();watcher.EnableRaisingEvents=true;
+        try{await engine.ExtractAsync(cancellationArchive,cancellationEntries,cancellationOutput,ConflictPolicy.Replace,cancellation:extractionCancellation.Token);throw new Exception("Cancelled extraction committed");}
+        catch(OperationCanceledException)
+        {
+            Assert(await File.ReadAllTextAsync(Path.Combine(cancellationOutput,"cancel-large.bin"))=="keep original","mid-file cancellation preserves replacement target");
+            Assert(!Directory.EnumerateFiles(cancellationOutput,"*.partial").Any(),"mid-file cancellation closes and removes active stream");
+        }
+    }
     foreach(var format in new[]{"7z","zip"})
     {
         var modifiable=Path.Combine(root,"修改."+format);
@@ -195,10 +251,28 @@ try
     Assert(!GitHubUpdateChecker.TryParseTag("nightly",out _),"update release tag rejects non-version tags");
     foreach(var unsafePath in new[]{"../escape.txt","/absolute.txt","C:\\escape.txt","file.txt:ads","CON.txt","trailing. "})
     {try{ArchiveEngine.ResolveOutput(root,unsafePath);throw new Exception("Unsafe path accepted: "+unsafePath);}catch(IOException){checks.Add("reject "+unsafePath);}}
-    var malicious=Path.Combine(root,"malicious.zip");using(var zip=ZipFile.Open(malicious,ZipArchiveMode.Create)){using var writer=new StreamWriter(zip.CreateEntry("../escape.txt").Open());writer.Write("unsafe");}
+    var malicious=Path.Combine(root,"malicious.zip");using(var zip=ZipFile.Open(malicious,ZipArchiveMode.Create))
+    {
+        using(var safe=new StreamWriter(zip.CreateEntry("safe.txt").Open()))safe.Write("must not be extracted");
+        using var writer=new StreamWriter(zip.CreateEntry("../escape.txt").Open());writer.Write("unsafe");
+    }
     try{await engine.ExtractAsync(malicious,await engine.ListAsync(malicious),Path.Combine(root,"malicious-out"));throw new Exception("Traversal extracted");}catch(IOException){checks.Add("archive traversal blocked");}
+    Assert(!File.Exists(Path.Combine(root,"malicious-out","safe.txt")),"batch validates all paths before committing any output");
     var limitArchive=Path.Combine(root,"真实压缩.zip");var large=(await engine.ListAsync(limitArchive)).Single(e=>e.Name=="data.bin");
     try{await engine.ReadAsync(limitArchive,large,limit:100);throw new Exception("Limit bypass");}catch(IOException){checks.Add("preview byte cap");}
+    var limitedOutput=Path.Combine(root,"batch-limit");
+    try{await engine.ExtractAsync(limitArchive,[large with {Size=1}],limitedOutput);throw new Exception("Batch limit bypass");}
+    catch(IOException){Assert(!Directory.EnumerateFiles(limitedOutput,"*",SearchOption.AllDirectories).Any(),"batch validates native sizes before opening outputs");}
+    var callbackOutput=Path.Combine(root,"callback-error");const string callbackMessage="progress callback failure";
+    try{await engine.ExtractAsync(limitArchive,[large],callbackOutput,progress:new InlineProgress(_=>throw new IOException(callbackMessage)));throw new Exception("Callback error ignored");}
+    catch(IOException ex)when(ex.Message==callbackMessage){Assert(!Directory.EnumerateFiles(callbackOutput,"*.partial",SearchOption.AllDirectories).Any(),"batch preserves managed callback exception and cleans output");}
+    var emptyFile=Path.Combine(root,"empty.txt");await File.WriteAllBytesAsync(emptyFile,[]);
+    foreach(var format in new[]{"7z","zip","tar"})
+    {
+        var archive=Path.Combine(root,"empty."+format);await engine.CreateAsync(archive,[emptyFile],format);
+        var output=Path.Combine(root,"empty-"+format);var extracted=await engine.ExtractAsync(archive,await engine.ListAsync(archive),output);
+        Assert(extracted.Extracted==1&&new FileInfo(Path.Combine(output,"empty.txt")).Length==0,"batch commits zero-length file "+format);
+    }
     using var cts=new CancellationTokenSource();cts.Cancel();try{await engine.ListAsync(limitArchive,cancellation:cts.Token);throw new Exception("Cancellation ignored");}catch(OperationCanceledException){checks.Add("cancel before start");}
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{passed=checks.Count,checks},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
     if(args.Contains("--keep")){Console.WriteLine("Fixtures: "+root);root="";}

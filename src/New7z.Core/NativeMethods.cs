@@ -7,7 +7,10 @@ internal static class NativeMethods
     private const string Dll = "New7z.Native.dll";
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate int ProgressCallback(ulong total, ulong done, IntPtr context);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int ExtractItemCallback(uint index, int stage, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzInitialize(string path);
+    [DllImport("kernel32.dll",EntryPoint="GetFileAttributesW",CharSet=CharSet.Unicode,SetLastError=true)] internal static extern uint GetFileAttributes(string path);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void NzFree(IntPtr data);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void NzGetDragDiagnostics(out IntPtr text);
 
@@ -21,6 +24,11 @@ internal static class NativeMethods
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void NzReleaseArchiveDragData(IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzList(string path, string? password, out IntPtr json, ProgressCallback progress, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzExtract(string path, string? password, uint index, string? output, ulong limit, out IntPtr data, out ulong size, ProgressCallback progress, IntPtr context);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzExtractBatch(string path,string? password,
+        [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.U4,SizeParamIndex=5)] uint[] indices,
+        [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=5)] string[] outputs,
+        [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.U8,SizeParamIndex=5)] ulong[] limits,uint count,
+        ExtractItemCallback itemCallback,ProgressCallback progress,IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzTest(string path, string? password, ProgressCallback progress, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzCreate(string path, int format, int level, string? method, string? password, int encryptNames,
         [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=7)] string[] paths,

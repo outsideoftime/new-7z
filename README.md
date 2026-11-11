@@ -2,13 +2,13 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前正式版：**1.0.0**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前正式版：**1.0.1**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
 ## 使用
 
-下载安装 EXE，按向导安装到当前用户目录。安装包约 **23.1 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。详细操作见 [操作说明](docs/操作说明.md)。
+下载安装 EXE，按向导安装到当前用户目录。安装包约 **23.36 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。详细操作见 [操作说明](docs/操作说明.md)。
 
 - 创建 7z、ZIP、TAR，7z/ZIP 支持密码与 7z 文件名加密；读取、解压和校验引擎支持的归档。设置中可选择默认格式，并分别指定 7z/ZIP 的默认压缩方法。
 - 压缩包内直接预览图片和文本/代码文件，常见源码、配置、脚本扩展名（.cs、.py、.rs、.toml、Makefile 等）都可当作文本查看；支持中文文件名、文件夹、多选解压。
@@ -22,6 +22,8 @@
 勾选菜单任务后，资源管理器右键会出现 **New7z** 子菜单：系统具备受信任身份包或现有开发注册条件时使用 Windows 11 现代菜单，否则退回兼容菜单。两种模式只注册一种，不会重复显示。不会自动开启开发者模式、导入证书、隐藏 Windows 自带压缩菜单或强制覆盖默认应用。
 
 普通未加密 ZIP 的标准/更快模式使用流式 ZIP 编码；体积优先、密码 ZIP 和全部 7z 使用 7-Zip。读取、预览、解压仍使用 7-Zip。详见 [ZIP 性能记录](docs/ZIP性能优化.md)。
+
+解压采用一次打开归档、批量输出，避免多文件包反复解析和固实块重复解码；保留路径预检、逐文件校验提交、冲突处理和取消清理。详见 [解压性能记录](docs/解压性能优化.md)。
 
 ## 文件图标
 
@@ -90,6 +92,6 @@ New7z is an open-source Windows 11 archiver built with WinUI 3 and the full 7-Zi
 
 HTML 原型使用示例数据，不读写真实压缩包；真实产品在 `src/` 与 `native/`。原型检查：`npm ci`、`npm run check`、`npm run verify`、`npm run verify:menus`；浏览器缺失时先执行 `npx playwright install chromium`。
 
-当前为早期预览版：仅 x64，尚无自动更新、跨卷回调、独立引擎崩溃隔离；固实大包的逐文件解压性能、归档列表排序与属性面板仍需完善。RAR 使用完整引擎读取，但尚无 RAR 实例集成测试。具体预览大小限制与差异见工程说明。
+当前为早期预览版：仅 x64，尚无跨卷回调、独立引擎崩溃隔离；归档列表排序与属性面板仍需完善。RAR 已使用本地工程样本验证批量解压，但仓库尚未附带固定的 RAR 回归样本。具体预览大小限制与差异见工程说明。
 
 自有代码采用 MIT；7-Zip 等组件维持原许可。发行包的 `Licenses` 附第三方通知、7-Zip 完整原始源码和构建适配代码。个人测试源文件、性能压缩包、证书和本地构建缓存不会提交到仓库。

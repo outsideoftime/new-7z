@@ -16,6 +16,9 @@
 #include "../7zSdk/Source/CPP/7zip/IPassword.h"
 
 using Progress = int(__cdecl*)(unsigned long long, unsigned long long, void*);
+// prepare (0): S_FALSE skips the item; commit (1): called only after CRC success
+// and after closing its output stream. Managed exceptions never cross this ABI.
+using ExtractItem = int(__cdecl*)(UInt32, int, void*);
 constexpr HRESULT PasswordRequired=HRESULT(0x80040201), SizeLimit=HRESULT(0x80040202), DataInvalid=HRESULT(0x80040203), UpdateUnsupported=HRESULT(0x80040204);
 using Creator=HRESULT(WINAPI*)(const GUID*,const GUID*,void**);
 using HandlerProp=HRESULT(WINAPI*)(UInt32,PROPID,PROPVARIANT*);
@@ -59,6 +62,7 @@ public:
   Output(const wchar_t* path,UInt64 cap):limit(cap),memory(!path){if(path)file=CreateFileW(path,GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);}
   ~Output(){if(file!=INVALID_HANDLE_VALUE)CloseHandle(file);}
   bool valid()const{return memory||file!=INVALID_HANDLE_VALUE;}
+  HRESULT setModifiedTime(UInt64 value){if(!value)return S_OK;FILETIME time{DWORD(value),DWORD(value>>32)};return SetFileTime(file,nullptr,nullptr,&time)?S_OK:HRESULT_FROM_WIN32(GetLastError());}
   REFS
   METHOD(QueryInterface,(REFIID iid,void** out)){*out=nullptr;if(iid==IID_IUnknown||iid==IID_ISequentialOutStream||iid==IID_IOutStream)*out=static_cast<IOutStream*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
   METHOD(Write,(const void* data,UInt32 size,UInt32* processed)){if(processed)*processed=0;if(written>limit||size>limit-written)return SizeLimit;try{if(memory){const auto p=static_cast<const unsigned char*>(data);bytes.insert(bytes.end(),p,p+size);}else{DWORD n=0;if(!WriteFile(file,data,size,&n,nullptr))return HRESULT_FROM_WIN32(GetLastError());if(n!=size)return E_FAIL;}written+=size;if(processed)*processed=size;return S_OK;}catch(...){return E_OUTOFMEMORY;}}
@@ -105,6 +109,42 @@ public:
   METHOD(GetStream,(UInt32,ISequentialOutStream** stream,Int32 mode)){*stream=nullptr;if(mode==NArchive::NExtract::NAskMode::kExtract&&output){output->AddRef();*stream=output;}return status.report(0);}
   METHOD(PrepareOperation,(Int32)){return S_OK;}
   METHOD(SetOperationResult,(Int32 r)){if(r!=NArchive::NExtract::NOperationResult::kOK)result=(r==NArchive::NExtract::NOperationResult::kWrongPassword||status.passwordAsked)?PasswordRequired:DataInvalid;return result;}
+  METHOD(CryptoGetTextPassword,(BSTR* pw)){return status.getPassword(pw);}
+};
+struct BatchItem{std::wstring path;UInt64 limit,modifiedTime;};
+class BatchExtractCallback final:public IArchiveExtractCallback,public ICryptoGetTextPassword {
+  Status& status;const std::unordered_map<UInt32,BatchItem>& items;ExtractItem itemCallback;void* context;
+  Output* output=nullptr;UInt32 current=0;UInt64 modifiedTime=0;bool extracting=false;
+  void close(){if(output){output->Release();output=nullptr;}}
+public:
+  HRESULT result=S_OK;
+  BatchExtractCallback(Status& s,const std::unordered_map<UInt32,BatchItem>& i,ExtractItem cb,void* ctx):status(s),items(i),itemCallback(cb),context(ctx){}
+  ~BatchExtractCallback(){close();}
+  REFS
+  METHOD(QueryInterface,(REFIID iid,void** out)){*out=nullptr;if(iid==IID_IUnknown||iid==IID_IArchiveExtractCallback||iid==IID_IProgress)*out=static_cast<IArchiveExtractCallback*>(this);else if(iid==IID_ICryptoGetTextPassword)*out=static_cast<ICryptoGetTextPassword*>(this);if(!*out)return E_NOINTERFACE;AddRef();return S_OK;}
+  METHOD(SetTotal,(UInt64 value)){status.total=value;return status.report(0);}
+  METHOD(SetCompleted,(const UInt64* value)){return status.report(value?*value:0);}
+  METHOD(GetStream,(UInt32 index,ISequentialOutStream** stream,Int32 mode)){
+    close();extracting=false;*stream=nullptr;
+    if(mode!=NArchive::NExtract::NAskMode::kExtract)return S_OK;
+    auto found=items.find(index);if(found==items.end())return E_INVALIDARG;
+    HRESULT hr=status.report(0);if(FAILED(hr))return hr;
+    hr=itemCallback(index,0,context);if(hr==S_FALSE)return S_OK;if(FAILED(hr))return hr;
+    output=new(std::nothrow) Output(found->second.path.c_str(),found->second.limit);if(!output)return E_OUTOFMEMORY;
+    if(!output->valid())return HRESULT_FROM_WIN32(GetLastError());
+    current=index;modifiedTime=found->second.modifiedTime;extracting=true;output->AddRef();*stream=output;return S_OK;
+  }
+  METHOD(PrepareOperation,(Int32)){return S_OK;}
+  METHOD(SetOperationResult,(Int32 value)){
+    // Set timestamps through the already-open handle, avoiding another file open
+    // (and filesystem/security-filter work) for every extracted item.
+    HRESULT timeResult=S_OK;if(value==NArchive::NExtract::NOperationResult::kOK&&extracting&&output)timeResult=output->setModifiedTime(modifiedTime);
+    close();
+    if(value!=NArchive::NExtract::NOperationResult::kOK)return result=(value==NArchive::NExtract::NOperationResult::kWrongPassword||status.passwordAsked)?PasswordRequired:DataInvalid;
+    if(FAILED(timeResult))return result=timeResult;
+    if(extracting){extracting=false;HRESULT hr=itemCallback(current,1,context);if(FAILED(hr))result=hr;return hr;}
+    return S_OK;
+  }
   METHOD(CryptoGetTextPassword,(BSTR* pw)){return status.getPassword(pw);}
 };
 struct DragItem{UInt32 index;std::wstring path;bool directory;UInt64 limit;};
@@ -340,6 +380,34 @@ API int __cdecl NzArchiveDragWasTransferred(DragDataObject* session){return sess
 API void __cdecl NzReleaseArchiveDragData(DragDataObject* session){if(session)session->Release();}
 API int __cdecl NzList(const wchar_t* path,const wchar_t* password,wchar_t** json,Progress progress,void* ctx){*json=nullptr;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;UInt32 count=0;if(FAILED(hr=a.archive->GetNumberOfItems(&count)))return hr;if(count>1000000)return SizeLimit;std::wstring text=L"[";for(UInt32 i=0;i<count;i++){if(FAILED(a.status.report(i)))return E_ABORT;Variant name,size,packed,dir,encrypted,time,link,hard,attrs;a.archive->GetProperty(i,kpidPath,&name.v);a.archive->GetProperty(i,kpidSize,&size.v);a.archive->GetProperty(i,kpidPackSize,&packed.v);a.archive->GetProperty(i,kpidIsDir,&dir.v);a.archive->GetProperty(i,kpidEncrypted,&encrypted.v);a.archive->GetProperty(i,kpidMTime,&time.v);a.archive->GetProperty(i,kpidSymLink,&link.v);a.archive->GetProperty(i,kpidHardLink,&hard.v);a.archive->GetProperty(i,kpidAttrib,&attrs.v);if(i)text+=L",";UInt64 ft=time.v.vt==VT_FILETIME?(UInt64(time.v.filetime.dwHighDateTime)<<32)|time.v.filetime.dwLowDateTime:0;text+=L"{\"Index\":"+std::to_wstring(i)+L",\"Path\":"+quote(name.v.vt==VT_BSTR?name.v.bstrVal:L"content")+L",\"Size\":"+std::to_wstring(number(size.v))+L",\"PackedSize\":"+(packed.v.vt==VT_EMPTY?L"null":std::to_wstring(number(packed.v)))+L",\"IsDirectory\":"+(propBool(dir.v)?L"true":L"false")+L",\"Encrypted\":"+(propBool(encrypted.v)?L"true":L"false")+L",\"IsLink\":"+((link.v.vt==VT_BSTR||hard.v.vt==VT_BSTR||(number(attrs.v)&FILE_ATTRIBUTE_REPARSE_POINT))?L"true":L"false")+L",\"FileTime\":"+std::to_wstring(ft)+L"}";}text+=L"]";const auto n=(text.size()+1)*sizeof(wchar_t);*json=static_cast<wchar_t*>(CoTaskMemAlloc(n));if(!*json)return E_OUTOFMEMORY;memcpy(*json,text.c_str(),n);return S_OK;}catch(...){return E_OUTOFMEMORY;}}
 API int __cdecl NzExtract(const wchar_t* path,const wchar_t* password,UInt32 index,const wchar_t* output,UInt64 limit,unsigned char** data,UInt64* size,Progress progress,void* ctx){if(data)*data=nullptr;if(size)*size=0;try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Variant property;a.archive->GetProperty(index,kpidSize,&property.v);if(number(property.v)>limit)return SizeLimit;Ptr<Output> stream;stream.p=new Output(output,limit);if(!stream->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,stream.p);hr=a.archive->Extract(&index,1,0,callback.p);if(FAILED(hr))return a.status.passwordAsked&&hr!=E_ABORT?PasswordRequired:hr;if(FAILED(callback->result))return callback->result;if(!output&&data&&size){*size=stream->bytes.size();*data=static_cast<unsigned char*>(CoTaskMemAlloc(size_t(*size?*size:1)));if(!*data)return E_OUTOFMEMORY;if(*size)memcpy(*data,stream->bytes.data(),size_t(*size));}return S_OK;}catch(...){return E_OUTOFMEMORY;}}
+API int __cdecl NzExtractBatch(const wchar_t* path,const wchar_t* password,const UInt32* indices,const wchar_t* const* outputs,const UInt64* limits,UInt32 count,ExtractItem itemCallback,Progress progress,void* ctx){
+  try{
+    if(!count)return S_OK;
+    if(!indices||!outputs||!limits||!itemCallback||count>1000000)return E_INVALIDARG;
+    Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;
+    UInt32 itemCount=0;if(FAILED(hr=a.archive->GetNumberOfItems(&itemCount)))return hr;
+    std::unordered_map<UInt32,BatchItem> items;items.reserve(count);std::vector<UInt32> sorted(indices,indices+count);
+    for(UInt32 i=0;i<count;i++){
+      if(FAILED(a.status.report(0)))return E_ABORT;
+      if(indices[i]>=itemCount||!outputs[i]||!*outputs[i])return E_INVALIDARG;
+      Variant size,dir,link,hard,attrs,time;
+      if(FAILED(hr=a.archive->GetProperty(indices[i],kpidSize,&size.v)))return hr;
+      a.archive->GetProperty(indices[i],kpidIsDir,&dir.v);a.archive->GetProperty(indices[i],kpidSymLink,&link.v);a.archive->GetProperty(indices[i],kpidHardLink,&hard.v);a.archive->GetProperty(indices[i],kpidAttrib,&attrs.v);
+      a.archive->GetProperty(indices[i],kpidMTime,&time.v);
+      if(propBool(dir.v)||link.v.vt==VT_BSTR||hard.v.vt==VT_BSTR||(number(attrs.v)&FILE_ATTRIBUTE_REPARSE_POINT))return E_INVALIDARG;
+      if(number(size.v)>limits[i])return SizeLimit;
+      UInt64 modifiedTime=time.v.vt==VT_FILETIME?(UInt64(time.v.filetime.dwHighDateTime)<<32)|time.v.filetime.dwLowDateTime:0;
+      if(!items.emplace(indices[i],BatchItem{outputs[i],limits[i],modifiedTime}).second)return E_INVALIDARG;
+    }
+    // The SDK requires ascending indices. One Extract call preserves solid decoder
+    // state and avoids reopening/parsing the archive for every output file.
+    std::sort(sorted.begin(),sorted.end());
+    Ptr<BatchExtractCallback> callback;callback.p=new BatchExtractCallback(a.status,items,itemCallback,ctx);
+    hr=a.archive->Extract(sorted.data(),count,0,callback.p);
+    if(FAILED(hr))return a.status.passwordAsked&&hr!=E_ABORT?PasswordRequired:hr;
+    return callback->result;
+  }catch(...){return E_OUTOFMEMORY;}
+}
 API int __cdecl NzTest(const wchar_t* path,const wchar_t* password,Progress progress,void* ctx){try{Archive a(password,progress,ctx);HRESULT hr=a.open(path);if(FAILED(hr))return hr;Ptr<ExtractCallback> callback;callback.p=new ExtractCallback(a.status,nullptr);hr=a.archive->Extract(nullptr,UInt32(-1),1,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
 API int __cdecl NzCreate(const wchar_t* path,int format,int level,const wchar_t* method,const wchar_t* password,int encryptNames,const wchar_t* const* paths,const wchar_t* const* names,UInt32 count,Progress progress,void* ctx){try{if(!createObject)return E_UNEXPECTED;if(format<0||format>2)return E_INVALIDARG;const BYTE handler=format==1?1:format==2?0xEE:7;GUID cls={0x23170F69,0x40C1,0x278A,{0x10,0,0,1,0x10,handler,0,0}};Ptr<IOutArchive> archive;HRESULT hr=createObject(&cls,&IID_IOutArchive,reinterpret_cast<void**>(archive.out()));if(FAILED(hr))return hr;Ptr<ISetProperties> props;if(SUCCEEDED(archive->QueryInterface(IID_ISetProperties,reinterpret_cast<void**>(props.out())))){const wchar_t* keys[4];PROPVARIANT values[4]{};UInt32 n=0;keys[n]=L"x";values[n].vt=VT_UI4;values[n].ulVal=level;n++;if(format!=2&&method&&*method){keys[n]=format==1?L"m":L"0";if(format==1&&_wcsicmp(method,L"Copy")==0){values[n].vt=VT_UI4;values[n].ulVal=0;}else{values[n].vt=VT_BSTR;values[n].bstrVal=SysAllocString(method);}n++;}if(password&&*password){if(format==1){keys[n]=L"em";values[n].vt=VT_BSTR;values[n].bstrVal=SysAllocString(L"AES256");n++;}else if(format==0){keys[n]=L"he";values[n].vt=VT_BOOL;values[n].boolVal=encryptNames?VARIANT_TRUE:VARIANT_FALSE;n++;}}hr=props->SetProperties(keys,values,n);for(UInt32 i=0;i<n;i++)PropVariantClear(&values[i]);if(FAILED(hr))return hr;}Status status(password,progress,ctx);Ptr<Output> output;output.p=new Output(path,UINT64_MAX);if(!output->valid())return HRESULT_FROM_WIN32(GetLastError());Ptr<UpdateCallback> callback;callback.p=new UpdateCallback(status,paths,names);hr=archive->UpdateItems(output.p,count,callback.p);return FAILED(hr)?hr:callback->result;}catch(...){return E_FAIL;}}
 API int __cdecl NzUpdate(const wchar_t* path,const wchar_t* output,const wchar_t* password,int zip,const UInt32* removeIndices,UInt32 removeCount,const wchar_t* const* addPaths,const wchar_t* const* addNames,UInt32 addCount,Progress progress,void* ctx){

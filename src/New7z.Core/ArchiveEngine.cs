@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.ExceptionServices;
 
 namespace New7z.Core;
 
@@ -188,44 +189,80 @@ public sealed class ArchiveEngine
         finally{if(File.Exists(temp))File.Delete(temp);}
     },cancellation);
 
-    public async Task<ExtractionResult> ExtractAsync(string archive,IReadOnlyList<ArchiveEntry> entries,string destination,ConflictPolicy policy=ConflictPolicy.Rename,string? password=null,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default)
+    public Task<ExtractionResult> ExtractAsync(string archive,IReadOnlyList<ArchiveEntry> entries,string destination,ConflictPolicy policy=ConflictPolicy.Rename,string? password=null,IProgress<EngineProgress>? progress=null,CancellationToken cancellation=default) => Task.Run(()=>
     {
+        cancellation.ThrowIfCancellationRequested();
+        archive=System.IO.Path.GetFullPath(archive);
         var root=System.IO.Path.GetFullPath(destination);Directory.CreateDirectory(root);EnsureNoReparse(root);
         // Preflight every path before creating any output, including entries hidden by directory structure.
-        foreach(var entry in entries){if(entry.IsLink)throw new IOException(Loc.T($"不解压链接条目：{entry.Path}", $"Link entries are not extracted: {entry.Path}"));ResolveOutput(root,entry.Path);}
-        var completed=0;var skipped=0;var totalFiles=(ulong)entries.Count(e=>!e.IsDirectory);
+        var plans=new List<ExtractionItem>(entries.Count);
         foreach(var entry in entries)
         {
             cancellation.ThrowIfCancellationRequested();
+            if(entry.IsLink)throw new IOException(Loc.T($"不解压链接条目：{entry.Path}", $"Link entries are not extracted: {entry.Path}"));
             var target=ResolveOutput(root,entry.Path);
-            if(string.Equals(target,System.IO.Path.GetFullPath(archive),StringComparison.OrdinalIgnoreCase))throw new IOException(Loc.T("不能用解压内容替换源压缩包。", "Extracted content cannot replace the source archive."));
-            if(entry.IsDirectory){Directory.CreateDirectory(target);continue;}
-            progress?.Report(new(totalFiles,(ulong)(completed+skipped),entry.Path));
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);EnsureNoReparse(System.IO.Path.GetDirectoryName(target)!);
-            if(File.Exists(target))
-            {
-                if(policy==ConflictPolicy.Skip){skipped++;progress?.Report(new(totalFiles,(ulong)(completed+skipped),entry.Path));continue;}
-                if(policy==ConflictPolicy.Rename)target=UniqueName(target);
-            }
-            var drive=new DriveInfo(System.IO.Path.GetPathRoot(root)!);
-            if((ulong)drive.AvailableFreeSpace<entry.Size)throw new IOException(Loc.T("目标磁盘空间不足。", "The destination disk is out of space."));
-            var temp=System.IO.Path.Combine(System.IO.Path.GetDirectoryName(target)!,".new7z-"+Guid.NewGuid().ToString("N")+".partial");
+            if(string.Equals(target,archive,StringComparison.OrdinalIgnoreCase))throw new IOException(Loc.T("不能用解压内容替换源压缩包。", "Extracted content cannot replace the source archive."));
+            plans.Add(new(entry,target,entry.IsDirectory?"":System.IO.Path.Combine(System.IO.Path.GetDirectoryName(target)!,".new7z-"+Guid.NewGuid().ToString("N")+".partial")));
+        }
+        foreach(var item in plans.Where(p=>p.Entry.IsDirectory)){cancellation.ThrowIfCancellationRequested();EnsureNoReparse(item.Target);Directory.CreateDirectory(item.Target);}
+        var files=plans.Where(p=>!p.Entry.IsDirectory).ToArray();
+        var byIndex=files.ToDictionary(p=>p.Entry.Index);
+        var completed=0;var skipped=0;var totalFiles=(ulong)files.Length;
+        var drive=new DriveInfo(System.IO.Path.GetPathRoot(root)!);var availableSpace=(ulong)drive.AvailableFreeSpace;
+        string? activeTemp=null,currentItem=null;string currentTarget="";
+        ExceptionDispatchInfo? callbackError=null;long lastReport=0;
+        void ReportProgress(bool force=false)
+        {
+            if(progress==null)return;
+            var now=Stopwatch.GetTimestamp();
+            if(!force&&lastReport!=0&&now-lastReport<Stopwatch.Frequency/20)return;
+            lastReport=now;progress.Report(new(totalFiles,(ulong)(completed+skipped),currentItem));
+        }
+        NativeMethods.ExtractItemCallback itemCallback=(index,stage,_)=>
+        {
             try
             {
-                await Task.Run(()=>
+                cancellation.ThrowIfCancellationRequested();var item=byIndex[index];var entry=item.Entry;
+                if(stage==0)
                 {
-                    var cb=Callback(cancellation,null);Check(NativeMethods.NzExtract(archive,password,entry.Index,temp,Math.Max(entry.Size,1),out var unused,out _,cb,IntPtr.Zero),cancellation);GC.KeepAlive(cb);
-                },cancellation);
-                cancellation.ThrowIfCancellationRequested();EnsureNoReparse(System.IO.Path.GetDirectoryName(target)!);
-                if(File.Exists(target)&&File.GetAttributes(target).HasFlag(FileAttributes.ReparsePoint))throw new IOException(Loc.T("目标文件是重解析点，已停止写入。", "The target file is a reparse point; writing stopped."));
-                File.Move(temp,target,policy==ConflictPolicy.Replace);completed++;
-                if(entry.FileTime>0)File.SetLastWriteTimeUtc(target,DateTime.FromFileTimeUtc(entry.FileTime));
-                progress?.Report(new(totalFiles,(ulong)(completed+skipped),entry.Path));
+                    currentItem=entry.Path;currentTarget=item.Target;EnsureNoReparse(currentTarget);ReportProgress();
+                    var parent=System.IO.Path.GetDirectoryName(currentTarget)!;Directory.CreateDirectory(parent);EnsureNoReparse(parent);
+                    if(File.Exists(currentTarget))
+                    {
+                        if(policy==ConflictPolicy.Skip){skipped++;ReportProgress();return 1;}
+                        if(policy==ConflictPolicy.Rename)currentTarget=UniqueName(currentTarget);
+                    }
+                    // Keep a conservative budget and refresh only when necessary, rather
+                    // than querying the volume for each of thousands of small files.
+                    if(availableSpace<entry.Size)availableSpace=(ulong)drive.AvailableFreeSpace;
+                    if(availableSpace<entry.Size)throw new IOException(Loc.T("目标磁盘空间不足。", "The destination disk is out of space."));
+                    activeTemp=item.Temp;
+                }
+                else
+                {
+                    EnsureNoReparse(currentTarget);
+                    File.Move(item.Temp,currentTarget,policy==ConflictPolicy.Replace);activeTemp=null;completed++;
+                    availableSpace-=entry.Size;
+                    ReportProgress();
+                }
+                return 0;
             }
-            finally { if(File.Exists(temp))File.Delete(temp); }
+            catch(Exception ex){callbackError=ExceptionDispatchInfo.Capture(ex);return unchecked((int)0x80004004);}
+        };
+        NativeMethods.ProgressCallback callback=(_,_,_)=>
+        {
+            if(cancellation.IsCancellationRequested)return 1;
+            try{ReportProgress();return 0;}catch(Exception ex){callbackError=ExceptionDispatchInfo.Capture(ex);return 1;}
+        };
+        try
+        {
+            var code=NativeMethods.NzExtractBatch(archive,password,files.Select(p=>p.Entry.Index).ToArray(),files.Select(p=>p.Temp).ToArray(),files.Select(p=>Math.Max(p.Entry.Size,1)).ToArray(),(uint)files.Length,itemCallback,callback,IntPtr.Zero);
+            callbackError?.Throw();Check(code,cancellation);cancellation.ThrowIfCancellationRequested();
+            ReportProgress(true);return new ExtractionResult(completed,skipped);
         }
-        return new(completed,skipped);
-    }
+        finally{GC.KeepAlive(itemCallback);GC.KeepAlive(callback);if(activeTemp!=null&&File.Exists(activeTemp))File.Delete(activeTemp);}
+    },cancellation);
+    private sealed record ExtractionItem(ArchiveEntry Entry,string Target,string Temp);
     public static string ResolveOutput(string root,string relative)
     {
         if(string.IsNullOrWhiteSpace(relative)||relative.Contains(':')||relative.StartsWith('/')||relative.StartsWith('\\'))throw new IOException(Loc.T("归档包含不安全的绝对路径。", "The archive contains an unsafe absolute path."));
@@ -239,7 +276,18 @@ public sealed class ArchiveEngine
     private static void EnsureNoReparse(string path)
     {
         for(var current=path;!string.IsNullOrEmpty(current);current=System.IO.Path.GetDirectoryName(current))
-            if((File.Exists(current)||Directory.Exists(current))&&File.GetAttributes(current).HasFlag(FileAttributes.ReparsePoint))throw new IOException(Loc.T("目标路径包含重解析点，已停止操作。", "The target path contains a reparse point; the operation stopped."));
+        {
+            // One metadata query per component. File.Exists + Directory.Exists +
+            // GetAttributes used to repeat the same filesystem lookup up to three times.
+            var attributes=NativeMethods.GetFileAttributes(current);
+            if(attributes==uint.MaxValue)
+            {
+                var error=Marshal.GetLastWin32Error();
+                if(error is 2 or 3)continue; // Missing file or parent: checked again before writing.
+                throw new IOException(new System.ComponentModel.Win32Exception(error).Message,unchecked((int)(0x80070000u|(uint)error)));
+            }
+            if((attributes&(uint)FileAttributes.ReparsePoint)!=0)throw new IOException(Loc.T("目标路径包含重解析点，已停止操作。", "The target path contains a reparse point; the operation stopped."));
+        }
     }
     private static string UniqueName(string path)
     {

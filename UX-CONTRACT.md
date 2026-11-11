@@ -50,6 +50,8 @@ Date 不适用：只读示例日期，无日期输入控件。引擎 API、登�
 
 原生设置页的菜单修复和文件关联注册复用 Button、Card 与 InfoBar，处理中禁用触发按钮，完成后恢复；错误就地显示且可重试。文件关联注册只加入 Capabilities、RegisteredApplications 和 OpenWithProgids，不修改 UserChoice；「选择默认应用」打开系统拥有的 Windows 设置页面，由用户确认格式。两项注册动作通过同一个系统集成脚本执行。
 
+设置页采用分类入口：首页列出「常规 / 压缩 / 右键菜单 / 外观与图标 / 文件关联 / 关于」，点击进入单一领域的详情页，左上角返回入口；从其他页面重新进入设置或切换页面时回到入口，切换语言或主题后就地重绘当前分类。分类页只承载该领域的卡片，避免设置内容增长后形成超长单页。
+
 按钮原生语义，hover/focus/pressed/disabled 统一；输入均有 label。select 使用原生控件，不改变弹出层归属。密码默认隐藏，切换 aria-label；不写 URL/日志/持久存储。搜索即时本地筛选，输入法组合期间暂停，非空有清除按钮。表单 novalidate，自有校验、第一错误聚焦；字段错误以 aria-invalid / aria-describedby 关联。
 
 ## Dataset navigation

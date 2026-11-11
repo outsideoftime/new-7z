@@ -143,6 +143,5 @@ public sealed partial class MainWindow
         };
         panel.Children.Add(Card(system));
         }
-        if(AppEnvironment.IsPackaged)AddPackagedAssociationSettings(panel);else AddAssociationSettings(panel);
     }
 }

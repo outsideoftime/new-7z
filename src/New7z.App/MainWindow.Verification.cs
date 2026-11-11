@@ -63,8 +63,11 @@ public sealed partial class MainWindow
                 for(var i=0;i<VisualTreeHelper.GetChildrenCount(node);i++)CollectSettingsLabels(VisualTreeHelper.GetChild(node,i));
             }
             CollectSettingsLabels(ContentHost);
+            if(!settingsLabels.Contains(T("常规","General"))||!settingsLabels.Contains(T("压缩","Compression"))||!settingsLabels.Contains(T("右键菜单","Context menu")))throw new IOException("Settings categories did not render.");
+            settingsCategory="compression";RenderPage();Root.UpdateLayout();
+            settingsLabels.Clear();CollectSettingsLabels(ContentHost);
             if(!settingsLabels.Contains(T("默认压缩格式","Default archive format"))||!settingsLabels.Contains(T("默认压缩方法","Default compression method")))throw new IOException("Compression defaults did not render.");
-            report["Settings"]="rendered native menu, compression format/method defaults, association and popup controls";
+            report["Settings"]="rendered settings hub and the compression defaults category";
             jobs.Add(new ArchiveJob("verification job","verification target"){Status="verification",Active=false});
             SelectPage("tasks");Root.UpdateLayout();
             report["Tasks"]="rendered a bound task card";

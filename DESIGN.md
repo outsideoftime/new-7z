@@ -86,7 +86,7 @@ Explorer 任务采用独立 `ShellTaskWindow`，任务窗口目标大小 600 × 
 
 原生系统图标来自 `图标/logo.png`，由 `scripts/build-icons.ps1` 转为七种尺寸的 `Assets/New7z.ico`；App EXE、Shell DLL、启动器嵌入同一资源，窗口通过共享 `WindowAppearance` 设置。`ShellTaskWindow` 的进度、输入、密码、InfoBar 和 ContentDialog 使用 WinUI 原生组件与 ThemeResource，同主程序保持语义与主题一致，不增加独立调色板。小窗口默认保留完成结果与「打开文件夹」，也可在设置中选择成功后自动关闭；错误与取消始终保留结果供查看，取消需确认且等待引擎安全退出。
 
-原生设置页的系统集成区由 `MainWindow.Settings.cs` 维护：右键菜单总开关、八项命令勾选共用一个「应用菜单设置」提交；未修改时按钮禁用，保存失败保留草稿并显示 InfoBar。弹窗关闭策略和 Windows 11 24H2+「压缩到」菜单开关均即时保存，失败回退已保存值并显示 InfoBar。Windows 菜单开关只修改当前用户的 Shell 扩展屏蔽项，保存前备份原始值，关闭开关或卸载时按原值恢复；不触碰其他压缩菜单命令。应用需通知资源管理器刷新，并告知用户必要时重启资源管理器。
+原生设置页的系统集成区由 `MainWindow.Settings.cs` 维护：右键菜单总开关、九项命令勾选共用一个「应用菜单设置」提交；未修改时按钮禁用，保存失败保留草稿并显示 InfoBar。设置页采用分类入口（常规、压缩、右键菜单、外观与图标、文件关联、关于），进入分类后顶部返回，分类内只保留该领域的卡片。弹窗关闭策略和 Windows 11 24H2+「压缩到」菜单开关均即时保存，失败回退已保存值并显示 InfoBar。Windows 菜单开关只修改当前用户的 Shell 扩展屏蔽项，保存前备份原始值，关闭开关或卸载时按原值恢复；不触碰其他压缩菜单命令。应用需通知资源管理器刷新，并告知用户必要时重启资源管理器。
 
 共享原型模块位于 `prototype/app.js`：`render` 导航；`archiveTable` 表格；`showDialog` 模态；`notify` 提示；`addTask` 任务状态机；`setTheme` 主题适配。控件统一用按钮、输入、标签和原生 select，不自造列表框。
 

@@ -27,6 +27,7 @@ public sealed partial class MainWindow:Window
     private IReadOnlyList<ArchiveEntry> entries=[];
     private string? archive,password;
     private string folder="",query="",page="home";
+    private string? settingsCategory;
     private ListView? fileList;
     private TextBlock? countLabel;
     private TextBox? searchBox;
@@ -111,6 +112,7 @@ public sealed partial class MainWindow:Window
     private void Notify(string text,InfoBarSeverity severity=InfoBarSeverity.Informational){Message.Message=text;Message.Severity=severity;Message.ActionButton=null;Message.IsOpen=true;}
     private void SelectPage(string name)
     {
+        if(page!=name)settingsCategory=null;
         page=name;
         if(name=="settings")Navigation.SelectedItem=Navigation.SettingsItem;
         else Navigation.SelectedItem=Navigation.MenuItems.Cast<NavigationViewItem>().First(i=>i.Tag?.ToString()==name);
@@ -119,7 +121,9 @@ public sealed partial class MainWindow:Window
     private void NavigationChanged(NavigationView sender,NavigationViewSelectionChangedEventArgs args)
     {
         if(!initialized)return;
-        page=args.IsSettingsSelected?"settings":(args.SelectedItem as NavigationViewItem)?.Tag?.ToString()??"home";RenderPage();
+        var next=args.IsSettingsSelected?"settings":(args.SelectedItem as NavigationViewItem)?.Tag?.ToString()??"home";
+        if(next!=page)settingsCategory=null;
+        page=next;RenderPage();
     }
     private void RenderPage(){if(page=="archive")ShowArchive();else if(page=="tasks")ShowTasks();else if(page=="settings")ShowSettings();else ShowHome();}
     private void ShowHome()
@@ -585,14 +589,79 @@ public sealed partial class MainWindow:Window
     }
     private void ShowSettings()
     {
-        var panel=Stack(22);panel.Children.Add(Text(T("设置","Settings"),28,true));
+        var panel=Stack(22);
+        if(settingsCategory==null)ShowSettingsHub(panel);else ShowSettingsCategory(panel,settingsCategory);
+        ShowContent(new ScrollViewer{Content=panel});
+    }
+    private void ShowSettingsHub(StackPanel panel)
+    {
+        panel.Children.Add(Text(T("设置","Settings"),28,true));
+        panel.Children.Add(Text(T("选择要调整的设置类别。","Choose a category to adjust.")));
+        var rows=Stack(8);
+        foreach(var (category,glyph,title,description) in new[]{
+            ("general","",T("常规","General"),T("界面语言、应用主题和应用更新","Language, theme and app updates")),
+            ("compression","",T("压缩","Compression"),T("默认压缩格式和压缩方法","Default archive format and compression method")),
+            ("explorer","",T("右键菜单","Context menu"),T("资源管理器菜单命令和任务弹出窗口","Explorer menu commands and the task popup")),
+            ("appearance","",T("外观与图标","Appearance and icons"),T("应用内品牌图标和压缩格式图标","In-app brand and archive format icons")),
+            ("associations","",T("文件关联","File associations"),T("默认应用和打开方式","Default apps and Open with")),
+            ("about","",T("关于","About"),T("版本、许可和引擎信息","Version, license and engine"))})
+            rows.Children.Add(SettingsCategoryRow(category,glyph,title,description));
+        panel.Children.Add(rows);
+    }
+    private Button SettingsCategoryRow(string category,string glyph,string title,string description)
+    {
+        var content=new Grid{ColumnSpacing=16};
+        content.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+        content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});
+        content.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+        content.Children.Add(new FontIcon{Glyph=glyph,FontSize=20,VerticalAlignment=VerticalAlignment.Center});
+        var text=Stack(2);text.VerticalAlignment=VerticalAlignment.Center;
+        text.Children.Add(Text(title,16,true));
+        var detail=Text(description,12);detail.Foreground=(Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];text.Children.Add(detail);
+        Grid.SetColumn(text,1);content.Children.Add(text);
+        var chevron=new FontIcon{Glyph="",FontSize=12,VerticalAlignment=VerticalAlignment.Center};
+        Grid.SetColumn(chevron,2);content.Children.Add(chevron);
+        var row=new Button{Content=content,HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch,Padding=new Thickness(16,12,16,12),CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=(Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],Background=(Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]};
+        row.Click+=(_,_)=>{settingsCategory=category;RenderPage();};
+        return row;
+    }
+    private void ShowSettingsCategory(StackPanel panel,string category)
+    {
+        var header=new StackPanel{Orientation=Orientation.Horizontal,Spacing=12,VerticalAlignment=VerticalAlignment.Center};
+        var back=new Button{Content=new FontIcon{Glyph="",FontSize=14},Padding=new Thickness(10,8,10,8),CornerRadius=new CornerRadius(6)};
+        ToolTipService.SetToolTip(back,T("返回设置","Back to settings"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(back,T("返回设置","Back to settings"));
+        back.Click+=(_,_)=>{settingsCategory=null;RenderPage();};
+        header.Children.Add(back);header.Children.Add(Text(SettingsCategoryTitle(category),28,true));panel.Children.Add(header);
+        switch(category)
+        {
+            case "general":AddGeneralSettings(panel);AddUpdateSettings(panel);break;
+            case "compression":AddCompressionSettings(panel);break;
+            case "explorer":AddExplorerSettings(panel);break;
+            case "appearance":AddIconSettings(panel);break;
+            case "associations":if(AppEnvironment.IsPackaged)AddPackagedAssociationSettings(panel);else AddAssociationSettings(panel);break;
+            case "about":AddAboutSettings(panel);break;
+        }
+    }
+    private static string SettingsCategoryTitle(string category)=>category switch
+    {
+        "general"=>T("常规","General"),
+        "compression"=>T("压缩","Compression"),
+        "explorer"=>T("右键菜单","Context menu"),
+        "appearance"=>T("外观与图标","Appearance and icons"),
+        "associations"=>T("文件关联","File associations"),
+        _=>T("关于","About")
+    };
+    private void AddGeneralSettings(StackPanel panel)
+    {
         var language=new ComboBox{Header=T("界面语言","Language"),ItemsSource=new[]{T("跟随系统","Follow system"),"简体中文","English"},SelectedIndex=Math.Max(0,Array.IndexOf(LanguageCodes,settings.Language)),MinWidth=240};
         language.SelectionChanged+=(_,_)=>{settings.Language=LanguageCodes[language.SelectedIndex];settings.Save();ApplyLanguage();SaveExplorerLanguage();RenderPage();};
         panel.Children.Add(Card(language));
-        AddCompressionSettings(panel);AddExplorerSettings(panel);AddUpdateSettings(panel);
         var theme=new ComboBox{Header=T("应用主题","Theme"),ItemsSource=new[]{T("跟随系统","System"),T("浅色","Light"),T("深色","Dark")},SelectedIndex=Math.Max(0,Array.IndexOf(ThemeCodes,NormalizeTheme(settings.Theme))),MinWidth=240};theme.SelectionChanged+=(_,_)=>{settings.Theme=ThemeCodes[theme.SelectedIndex];settings.Save();ApplyTheme();};panel.Children.Add(Card(theme));
-        AddIconSettings(panel);
-        var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text(T("MIT 开源许可","MIT open-source license"),14));about.Children.Add(Text(T("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP/TAR 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。","Local 7-Zip 26.05 engine · no separate 7-Zip installation needed\nCreates 7z/ZIP/TAR; other formats are read according to engine support. RAR is extract-only.\nPreview is read-only; images up to 32 MiB and text up to 2 MiB."),12));panel.Children.Add(Card(about));ShowContent(new ScrollViewer{Content=panel});
+    }
+    private void AddAboutSettings(StackPanel panel)
+    {
+        var about=Stack(8);about.Children.Add(Text("New7z · "+typeof(App).Assembly.GetName().Version?.ToString(3),18,true));about.Children.Add(Text(T("MIT 开源许可","MIT open-source license"),14));about.Children.Add(Text(T("本地 7-Zip 26.05 完整格式引擎 · 不依赖系统安装 7-Zip\n支持 7z/ZIP/TAR 创建，其他格式读取按引擎能力处理。RAR 仅解压。\n预览为只读；首版图片最大 32 MiB，文本最大 2 MiB。","Local 7-Zip 26.05 engine · no separate 7-Zip installation needed\nCreates 7z/ZIP/TAR; other formats are read according to engine support. RAR is extract-only.\nPreview is read-only; images up to 32 MiB and text up to 2 MiB."),12));panel.Children.Add(Card(about));
     }
     private bool closingApproved;
     private async void OnClosing(AppWindow sender,AppWindowClosingEventArgs args)

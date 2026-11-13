@@ -20,6 +20,13 @@ static std::vector<std::wstring> readDrop(IDataObject& data){
 }
 static void write(const fs::path& path,const std::string& value){std::ofstream file(path,std::ios::binary);file<<value;}
 static std::string read(const fs::path& path){std::ifstream file(path,std::ios::binary);return {std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>()};}
+struct IsolatedState{fs::path output;unsigned calls=0,released=0;};
+static int __cdecl isolatedPrepare(void* context,Progress progress,void* state){
+  auto& request=*static_cast<IsolatedState*>(context);++request.calls;
+  if(progress(1,0,state))return E_ABORT;
+  write(request.output,"isolated worker output");return progress(1,1,state)?E_ABORT:S_OK;
+}
+static void __cdecl isolatedRelease(void* context){++static_cast<IsolatedState*>(context)->released;}
 static void shellCopy(IDataObject* data,const fs::path& destination){
   fs::create_directories(destination);
   Ptr<IShellItem> folder;check(SUCCEEDED(SHCreateItemFromParsingName(destination.c_str(),nullptr,IID_PPV_ARGS(folder.out()))),"resolve Shell destination");
@@ -96,6 +103,7 @@ int wmain(int argc,wchar_t** argv){
       check(SUCCEEDED(NzCreateArchiveDragData(package.p,nullptr,archive.c_str(),nullptr,&index,bridgeOutputs,1,bridgeOutputs,1,bridgeTemp.c_str(),L"New7z test",&session)),"attach native delayed archive data through IDataObjectProvider");
       Ptr<IDataObjectProvider> provider;check(SUCCEEDED(package->QueryInterface(IID_PPV_ARGS(provider.out()))),"query real DataPackage interop provider");
       Ptr<IDataObject> bridged;check(SUCCEEDED(provider->GetDataObject(bridged.out())),"retrieve native archive object through DataPackage");
+      session->commitDrop(); // The test must not depend on the user's physical mouse state.
       NzReleaseArchiveDragData(session);
       check(readDrop(*bridged.p)==std::vector<std::wstring>{bridgeOutput}&&read(bridgeOutput)=="root contents","DataPackage retains native data after source releases its reference");
       FORMATETC performed{static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_PERFORMEDDROPEFFECT)),nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL};
@@ -123,6 +131,18 @@ int wmain(int argc,wchar_t** argv){
       interrupted.commitDrop();FORMATETC interruptedFormat{CF_HDROP,nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL};STGMEDIUM interruptedMedium{};
       check(interrupted.GetData(&interruptedFormat,&interruptedMedium)==E_ABORT&&!fs::exists(cancelOutput),"cancellation while preparing the drop creates no output");
       check(interrupted.GetData(&interruptedFormat,&interruptedMedium)==E_ABORT,"repeat requests preserve the cancelled preparation result");
+
+      const std::wstring isolatedTemp=(root/(zip?L"zip-isolated":L"7z-isolated")).wstring();fs::create_directories(isolatedTemp);
+      const std::wstring isolatedOutput=(fs::path(isolatedTemp)/L"worker.txt").wstring();const wchar_t* isolatedOutputs[]={isolatedOutput.c_str()};
+      IsolatedState worker{fs::path(isolatedOutput)};
+      {
+        DragDataObject isolated(L"missing-native-archive.7z",nullptr,isolatedTemp.c_str(),&index,isolatedOutputs,1,isolatedOutputs,1,nullptr,nullptr);
+        isolated.setIsolatedPrepare(isolatedPrepare,&worker,isolatedRelease);
+        check(readDrop(isolated)==std::vector<std::wstring>{isolatedTemp}&&worker.calls==0,"isolated drag hover never invokes the worker");
+        isolated.commitDrop();check(readDrop(isolated)==std::vector<std::wstring>{isolatedOutput}&&read(isolatedOutput)=="isolated worker output","isolated drag uses worker callback without opening a native archive");
+        check(readDrop(isolated).size()==1&&worker.calls==1,"isolated drag prepares exactly once");
+      }
+      check(worker.released==1,"isolated callback lifetime ends with the native data object");
 
       const std::wstring outside=(root/L"outside.txt").wstring();const wchar_t* badOutputs[]={outside.c_str()};
       DragDataObject invalid(archive.c_str(),nullptr,cancelTemp.c_str(),&index,badOutputs,1,badOutputs,1,nullptr,nullptr);

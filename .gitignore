@@ -23,6 +23,11 @@ docs/popup-close-tests.json
 docs/performance-*.json
 docs/native-integration.txt
 docs/shell-evidence/
+docs/screenshots/
+docs/menu-screenshots/
+premium-audit.json
+# Rendered promo videos and covers are build outputs, not sources.
+promo/out/
 *.pfx
 *.p12
 *.pem

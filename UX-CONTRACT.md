@@ -1,5 +1,7 @@
 # New7z UX Contract
 
+2026-11-13 原生应用补充（实现与证据：[稳定性与安全加固](docs/稳定性与安全加固.md)）：归档列表由 `MainWindow.ArchiveView.cs` 与 `ArchiveSorting` 管理排序、过滤、选择恢复和属性；采用 WinUI 虚拟化 ListView 内部滚动，搜索与路径属于当前窗口内的临时状态。当前目录切换保留排序，排序保留仍可见的选择，过滤后的选择仅覆盖可见结果。按用户要求，右侧常显整包属性，通过竖线与文件列表隔开，不再提供「属性」按钮或弹窗。文件数量和原始大小汇总整包文件，压缩后大小读取归档文件实际字节数；选择、目录和搜索不改变统计。属性栏可纵向滚动并复制完整值，窄窗口通过左侧表格横向滚动保留全部列和右侧属性。任务更新复用卡片，后台读取共享状态，不因进度改变内容层级。文件图标映射由 `FileTypeIcons` 独占，配色与尺寸见 DESIGN.md。原型继续使用示例数据，原生诊断与原型浏览器测试分别提供证据。
+
 首轮设计候选，2026-11-03。范围：本地交互原型，不连接压缩引擎。用户任务以 [功能设计](docs/功能设计.md) 为提案来源，已存在能力以 SDK 目录与 `7zr.exe i` 为证据。
 
 范围说明：当前已有真实 WinUI 原生工程，其实现边界见 `docs/工程说明.md`。下表的 JavaScript owner 与模拟任务行为专指 HTML 设计原型；2026-11-04 已另行实现并注册 Windows 11 Explorer 现代菜单，原生 owner 为 `native/New7z.Shell.cpp`、`ShellRequest.cs` 与 `ShellTaskWindow`。
@@ -27,6 +29,8 @@
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
+| Native Archive Properties | MainWindow.ArchiveView.CreateArchivePropertiesPanel | 本文件 / DESIGN.md | 右侧常显整包统计；独立纵向滚动；ListView 纵向与表格横向滚动 | --verify-ui：选择/目录/搜索统计不变、真实包大小、无属性按钮、900 DIP 布局 |
+| Native Preview | MainWindow.Preview.ShowPreviewAsync | 本文件 / DESIGN.md | 主窗口所属的独立图片/文本只读窗口；一次激活；加载取消与控件复用 | --verify-ui：文本/图片、重复打开、查找/换行布局稳定、读取中关闭 |
 | Table Selection | app.js archiveTable / selection Set | 本文件 | 当前可见目录 | browser-check.cjs |
 | Select/Listbox | native select | DESIGN.md | native，接受操作系统弹层 | browser-check.cjs |
 | Form | app.js showDialog / validateName | 本文件 | 压缩 / 解压 | browser-check.cjs |
@@ -47,6 +51,8 @@
 Date 不适用：只读示例日期，无日期输入控件。引擎 API、登录、远程请求、真实磁盘修改本轮不适用。
 
 ## Component behavior
+
+原生图片/文本预览统一由 `MainWindow.Preview.cs` 打开独立的主窗口所属窗口；每次打开只激活一次，不以延时循环抢焦点。双击由 ListView 完成手势和选择后排队处理；重复打开请求共用当前会话。首次显示前确定控件显隐与加载状态；查找/换行保留同一文本控件，匹配提示不挤压内容区。关闭立即使异步读取失效并请求取消。原生 `--verify-ui` 分别检查文本、图片、重复请求、查找/换行实例和高度稳定性、关闭释放；不等同于当前桌面逐帧视觉验收。
 
 原生设置页的菜单修复和文件关联注册复用 Button、Card 与 InfoBar，处理中禁用触发按钮，完成后恢复；错误就地显示且可重试。文件关联注册只加入 Capabilities、RegisteredApplications 和 OpenWithProgids，不修改 UserChoice；「选择默认应用」打开系统拥有的 Windows 设置页面，由用户确认格式。两项注册动作通过同一个系统集成脚本执行。
 

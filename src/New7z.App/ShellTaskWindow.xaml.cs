@@ -21,6 +21,7 @@ public sealed partial class ShellTaskWindow:Window
     private CancellationTokenSource cancellation=new();
     private bool loaded,running,closingDialog,closeWhenDone,windowClosed;
     private int batchIndex;
+    private readonly string taskId=Guid.NewGuid().ToString("N");
     private string? destination;
     private string[] targets=[];
     private TextBox? output;
@@ -127,16 +128,17 @@ public sealed partial class ShellTaskWindow:Window
         if(request.Action=="create")
         {
             StartButton.Content=T("开始压缩","Start Compression");
-            format=new ComboBox{Header=T("格式","Format"),ItemsSource=new[]{"7z","zip","tar"},SelectedIndex=Math.Max(0,Array.IndexOf(new[]{"7z","zip","tar"},UserSettings.NormalizeFormat(UserSettings.Load().DefaultFormat))),HorizontalAlignment=HorizontalAlignment.Stretch};
+            format=new ComboBox{Header=T("格式","Format"),ItemsSource=new[]{"7z","zip","tar","zst","lz4"},SelectedIndex=Math.Max(0,Array.IndexOf(new[]{"7z","zip","tar","zst","lz4"},UserSettings.NormalizeFormat(UserSettings.Load().DefaultFormat))),HorizontalAlignment=HorizontalAlignment.Stretch};
             method=new ComboBox{Header=T("压缩方法","Compression method"),HorizontalAlignment=HorizontalAlignment.Stretch};
             level=new ComboBox{Header=T("压缩级别","Compression Level"),ItemsSource=new[]{T("标准","Standard"),T("更快","Faster"),T("更小","Smaller")},SelectedIndex=0,HorizontalAlignment=HorizontalAlignment.Stretch};
             secret=new PasswordBox{Header=T("密码（可选）","Password (optional)"),PasswordRevealMode=PasswordRevealMode.Peek};
             encryptNames=new CheckBox{Content=T("加密文件名（仅 7z）","Encrypt file names (7z only)"),IsEnabled=false};
             void UpdateMethods(){var code=format.SelectedItem?.ToString()??"7z";var choices=CompressionOptions.For(code);method.ItemsSource=choices;var preferred=CompressionOptions.Default(UserSettings.Load(),code);method.SelectedIndex=Math.Max(0,choices.ToList().FindIndex(item=>item.Value==preferred));method.IsEnabled=choices.Count>0;}
-            void UpdateEncryption(){var tar=format.SelectedIndex==2;if(tar)secret.Password="";secret.IsEnabled=!tar;level.IsEnabled=!tar;method.IsEnabled=!tar;encryptNames.IsEnabled=!tar&&format.SelectedIndex==0&&secret.Password.Length>0;if(!encryptNames.IsEnabled)encryptNames.IsChecked=false;}
+            var streamHint=new TextBlock{Text=T("Zstandard / LZ4 每次压缩一个文件；多个文件请先打包为 TAR。","Zstandard / LZ4 compress one file; pack multiple files into TAR first."),TextWrapping=TextWrapping.Wrap};
+            void UpdateEncryption(){var noPassword=format.SelectedIndex>=2;if(noPassword)secret.Password="";secret.IsEnabled=!noPassword;level.IsEnabled=format.SelectedIndex!=2;method.IsEnabled=format.SelectedIndex<2;streamHint.Visibility=format.SelectedIndex>=3?Visibility.Visible:Visibility.Collapsed;encryptNames.IsEnabled=format.SelectedIndex==0&&secret.Password.Length>0;if(!encryptNames.IsEnabled)encryptNames.IsChecked=false;}
             format.SelectionChanged+=(_,_)=>{output.Text=System.IO.Path.ChangeExtension(output.Text,format.SelectedItem.ToString());UpdateMethods();UpdateEncryption();};
             secret.PasswordChanged+=(_,_)=>UpdateEncryption();
-            Configuration.Children.Add(format);Configuration.Children.Add(method);Configuration.Children.Add(level);Configuration.Children.Add(secret);Configuration.Children.Add(encryptNames);UpdateMethods();UpdateEncryption();
+            Configuration.Children.Add(format);Configuration.Children.Add(method);Configuration.Children.Add(level);Configuration.Children.Add(secret);Configuration.Children.Add(encryptNames);Configuration.Children.Add(streamHint);UpdateMethods();UpdateEncryption();
         }
         else
         {
@@ -201,6 +203,7 @@ public sealed partial class ShellTaskWindow:Window
         ProgressSection.Visibility=Visibility.Visible;Progress.IsIndeterminate=true;Progress.Value=0;PercentText.Text="";
         CancelButton.Content=T("取消任务","Cancel Task");CancelButton.IsEnabled=true;
         DestinationText.Text=(request!.Action=="test"?T("位置：","Location: "):T("保存到：","Save to: "))+destination;
+        PersistSharedTask(T("正在处理","Running"));
         Root.DispatcherQueue.TryEnqueue(ResizeToContent);
         bool succeeded=false;
         try
@@ -218,6 +221,7 @@ public sealed partial class ShellTaskWindow:Window
                     Progress.IsIndeterminate=false;
                     Progress.Value=Math.Max(Progress.Value,Math.Min(100,(step+Math.Clamp(p.Completed/(double)p.Total,0,1))*100/count));
                     PercentText.Text=$"{Progress.Value:0}%";
+                    PersistSharedTask(StatusText.Text,p.CurrentItem??"");
                 });
                 if(creating)
                 {
@@ -232,9 +236,10 @@ public sealed partial class ShellTaskWindow:Window
             Progress.IsIndeterminate=false;Progress.Value=100;PercentText.Text="100%";StatusText.Text=T("已完成","Completed");
             ShowMessage(request.Action=="test"?T("完整性测试通过","Integrity Test Passed"):creating?T("压缩完成","Compression Complete"):T("解压完成","Extraction Complete"),request.Action=="test"?T("所选压缩包未发现完整性错误。","No integrity errors were found in the selected archives."):T("文件已保存到目标位置。","Files were saved to the target location."),InfoBarSeverity.Success);
             succeeded=true;
+            PersistSharedTask(T("已完成","Completed"));
         }
-        catch(OperationCanceledException){Progress.IsIndeterminate=false;StatusText.Text=T("已取消","Cancelled");ShowMessage(T("任务已取消","Task Cancelled"),T("已完成的输出保留，当前未完成的临时文件已清理。","Completed output is kept; unfinished temporary files have been cleaned up."),InfoBarSeverity.Informational);}
-        catch(Exception ex){ShowFailure(ex.Message);RetryButton.Visibility=Visibility.Visible;}
+        catch(OperationCanceledException){Progress.IsIndeterminate=false;StatusText.Text=T("已取消","Cancelled");PersistSharedTask(StatusText.Text);ShowMessage(T("任务已取消","Task Cancelled"),T("已完成的输出保留，当前未完成的临时文件已清理。","Completed output is kept; unfinished temporary files have been cleaned up."),InfoBarSeverity.Informational);}
+        catch(Exception ex){ShowFailure(ex.Message);PersistSharedTask(T("失败：","Failed: ")+ex.Message);RetryButton.Visibility=Visibility.Visible;}
         finally
         {
             running=false;secret?.SetValue(PasswordBox.PasswordProperty,"");
@@ -243,8 +248,14 @@ public sealed partial class ShellTaskWindow:Window
             bool autoClose=false;
             try{autoClose=succeeded&&new ExplorerPreferencesStore().Read().AutoCloseOnSuccess;}
             catch(Exception){/* A settings read failure keeps the result visible. */}
+            await SharedTaskStore.FlushAsync();
             if(closeWhenDone||autoClose){activeDialog?.Hide();if(!windowClosed)Close();}
         }
+    }
+    private void PersistSharedTask(string status,string current="")
+    {
+        if(request==null||destination==null||request.Action=="test")return;
+        SharedTaskStore.Save(new SharedTask(taskId,(request.Action.StartsWith("create")?T("压缩 ","Compress "):T("解压 ","Extract "))+string.Join(", ",request.Paths.Select(System.IO.Path.GetFileName)),destination,status,Progress.Value,current,DateTime.UtcNow));
     }
     private async Task ProcessArchiveAsync(string source,string target,IProgress<EngineProgress> progress)
     {

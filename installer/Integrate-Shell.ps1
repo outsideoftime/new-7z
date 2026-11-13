@@ -13,6 +13,10 @@ $classId='{642CF40A-831E-42A9-AC63-F5A0ABDD5C18}'
 $compressToClsid='{7AE6900F-6EB0-44A2-9CA1-DB2F7EF352AF}'
 $blockedPath='Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked'
 $classes=[Microsoft.Win32.Registry]::CurrentUser
+$expectedPublisher='CN=New7z'
+if($RuntimeDirectory -and (Test-Path -LiteralPath "$RuntimeDirectory/ShellIdentity/AppxManifest.xml")){
+ $expectedPublisher=([xml](Get-Content -LiteralPath "$RuntimeDirectory/ShellIdentity/AppxManifest.xml" -Raw)).Package.Identity.Publisher
+}
 function Owned-Path([string]$Path){return $Path -and $Path.StartsWith($InstallRoot+'\',[StringComparison]::OrdinalIgnoreCase)}
 function Remove-Classic {
  foreach($ownedClassId in @($classId,'{642CF40A-831E-42A9-AC63-F5A0ABDD5C17}')){
@@ -146,7 +150,6 @@ function Remove-Modern([bool]$OnlyOwned){
  $previous=$null
  if($OnlyOwned -and (Test-Path -LiteralPath $statePath)){$previous=Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json}
  foreach($package in Get-AppxPackage -Name 'New7z.ContextMenu'){
-  if($package.Publisher -ne 'CN=New7z'){continue}
   $owned=(Owned-Path $package.InstallLocation) -or ($previous -and (Owned-Path $previous.RuntimeDirectory) -and $previous.PackageFullName -eq $package.PackageFullName)
   if($OnlyOwned -and !$owned){continue}
   Remove-AppxPackage -Package $package.PackageFullName -ErrorAction Stop
@@ -159,7 +162,14 @@ function Remove-OpenWith {
  if($key){try{$owned=([string]$key.GetValue('')).StartsWith('"'+$InstallRoot+'\',[StringComparison]::OrdinalIgnoreCase)}finally{$key.Dispose()}}
  if($owned){$classes.DeleteSubKeyTree($path,$false)}
 }
+# Installation starts this script detached; uninstall and repair calls queue here so
+# a pending registration can never race an uninstall.
+$integrationMutex=[Threading.Mutex]::new($false,'Local\New7z.ShellIntegration')
+$acquired=$false
 try{
+ try{$acquired=$integrationMutex.WaitOne([TimeSpan]::FromMinutes(5))}catch [Threading.AbandonedMutexException]{$acquired=$true}
+ if(!$acquired){throw 'Timed out waiting for another New7z shell integration step.'}
+ Remove-Item -LiteralPath (Join-Path $InstallRoot 'integration-error.txt') -ErrorAction SilentlyContinue
  if($Action -eq 'Remove'){
   Remove-Modern $true;Remove-Classic;Remove-OpenWith;Remove-Associations;Restore-WindowsCompressMenu;Notify-Explorer;exit 0
  }
@@ -167,25 +177,35 @@ try{
  if((!(Owned-Path $RuntimeDirectory) -and $RuntimeDirectory -ne $InstallRoot) -or !(Test-Path -LiteralPath "$RuntimeDirectory/New7z.App.exe")){throw 'Invalid application runtime directory.'}
  if($Action -eq 'Associate'){Register-Associations;Notify-Explorer;exit 0}
  if($Action -eq 'Repair'){
-  $modernRegistered=$null
-  try{$modernRegistered=Get-AppxPackage -Name 'New7z.ContextMenu' | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1}catch{}
-  Remove-Classic
-  if(!$modernRegistered){Register-Classic}
-  Notify-Explorer;exit 0
+  if(!$PSBoundParameters.ContainsKey('EnableMenu')){
+   $preferences=$classes.OpenSubKey('Software\New7z\Explorer')
+   if($preferences){try{$EnableMenu=if($preferences.GetValue('MenuEnabled',1) -eq 0){'0'}else{'1'}}finally{$preferences.Dispose()}}
+  }
+  if(!$PSBoundParameters.ContainsKey('EnableAssociations')){
+   $EnableAssociations='0'
+   if(Test-Path -LiteralPath $statePath){$previousState=Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json;if($previousState.AssociationsRegistered){$EnableAssociations='1'}}
+  }
  }
  $mode='disabled';$modernError=$null
  Remove-Classic
  if($EnableMenu -eq '1'){
   if(!$ClassicOnly){
    try{
-    $signed=Test-Path -LiteralPath "$RuntimeDirectory/ShellIdentity/signed-package.marker"
+    $signed=$false
+    $identityPackage="$RuntimeDirectory/ShellIdentity/New7z.ContextMenu.msix"
+    if(Test-Path -LiteralPath $identityPackage){
+     $signature=Get-AuthenticodeSignature -LiteralPath $identityPackage
+     $signed=$signature.Status -eq 'Valid' -and $signature.SignerCertificate.Subject -eq $expectedPublisher
+    }
     $developer=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock')
     $devEnabled=$false
     if($developer){try{$devEnabled=$developer.GetValue('AllowDevelopmentWithoutDevLicense') -eq 1}finally{$developer.Dispose()}}
     if(!$signed -and !$devEnabled){throw 'Modern menu needs a trusted signed identity package; using the compatible menu.'}
-    Remove-Modern $false
+    Remove-Modern $true
     if($signed){Add-AppxPackage -Path "$RuntimeDirectory/ShellIdentity/New7z.ContextMenu.msix" -ExternalLocation $RuntimeDirectory -ErrorAction Stop}
     else {Add-AppxPackage -Register "$RuntimeDirectory/ShellIdentity/AppxManifest.xml" -ExternalLocation $RuntimeDirectory -ErrorAction Stop}
+    $registeredPackage=Get-AppxPackage -Name New7z.ContextMenu | Where-Object {$_.Publisher -eq $expectedPublisher -and $_.Status -eq 'Ok'} | Select-Object -First 1
+    if(!$registeredPackage){throw 'Modern context menu package registration did not verify.'}
     $mode='modern'
    }catch{$modernError=$_.Exception.Message}
   }
@@ -199,7 +219,9 @@ try{
  $packageFullName=$null
  if($EnableAssociations -eq '1'){Register-Associations}else{Remove-Associations;Remove-OpenWith}
  Notify-Explorer
- if($mode -eq 'modern'){$packageFullName=(Get-AppxPackage -Name New7z.ContextMenu | Where-Object Publisher -eq 'CN=New7z' | Select-Object -First 1).PackageFullName}
+ if($mode -eq 'modern'){
+  $packageFullName=$registeredPackage.PackageFullName
+ }
  $stateVersion=$null
  if($RuntimeDirectory){$stateVersion=(Split-Path $RuntimeDirectory -Leaf).Split('-')[0]}
  if(!$stateVersion -and (Test-Path -LiteralPath $statePath)){$stateVersion=((Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).Version)}
@@ -210,4 +232,7 @@ try{
 }catch{
  [IO.File]::WriteAllText((Join-Path $InstallRoot 'integration-error.txt'),$_.Exception.ToString(),[Text.UTF8Encoding]::new($true))
  exit 1
+}finally{
+ if($acquired){$integrationMutex.ReleaseMutex()}
+ $integrationMutex.Dispose()
 }

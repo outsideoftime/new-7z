@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup><ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained></PropertyGroup>
+  <ItemGroup><ProjectReference Include="$(MSBuildThisFileDirectory)../src/New7z.EngineHost/New7z.EngineHost.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <Target Name="CopyEngineHost" AfterTargets="Build">
+    <ItemGroup><_EngineFiles Include="$(MSBuildThisFileDirectory)../src/New7z.EngineHost/bin/$(Configuration)/net10.0/win-x64/*" Exclude="**/*.pdb;**/New7z.Core.*;**/7z.dll;**/New7z.Native.dll;**/New7z.Shell.dll" /></ItemGroup>
+    <Copy SourceFiles="@(_EngineFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishEngineHost" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.RelativePath)' == 'New7z.EngineHost.exe' Or '%(ResolvedFileToPublish.RelativePath)' == 'New7z.EngineHost.dll' Or '%(ResolvedFileToPublish.RelativePath)' == 'New7z.EngineHost.deps.json' Or '%(ResolvedFileToPublish.RelativePath)' == 'New7z.EngineHost.runtimeconfig.json'" />
+      <_EnginePublish Include="$(MSBuildThisFileDirectory)../src/New7z.EngineHost/bin/$(Configuration)/net10.0/win-x64/New7z.EngineHost.*" Exclude="**/*.pdb" />
+      <ResolvedFileToPublish Include="@(_EnginePublish)"><RelativePath>%(Filename)%(Extension)</RelativePath><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory></ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>

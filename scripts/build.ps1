@@ -10,6 +10,9 @@ try {
  & dotnet publish src/New7z.App/New7z.App.csproj -c Release -p:Platform=x64 --self-contained true -o "$projectRoot/artifacts/app"
  if($LASTEXITCODE){throw 'App publish failed.'}
  Copy-Item -LiteralPath "$projectRoot/artifacts/native/x64/New7z.ShellHost.exe" -Destination "$projectRoot/artifacts/app/New7z.ShellHost.exe" -Force
+ foreach($resource in @('New7z.EngineHost.exe','New7z.EngineHost.dll','New7z.EngineHost.deps.json','New7z.EngineHost.runtimeconfig.json','Assets/FileTypes/csharp.png','Licenses/FileTypeIcons-MIT.txt')){
+   if(!(Test-Path -LiteralPath "$projectRoot/artifacts/app/$resource")){throw "Published worker or icon resource missing: $resource"}
+ }
  foreach($resource in @('New7z.App.pri','resources.pri','App.xbf','MainWindow.xbf','ShellTaskWindow.xbf','7z.dll','New7z.Native.dll','New7z.Shell.dll','New7z.ShellHost.exe','Assets/logo.png','Assets/New7z.ico')){
    if(!(Test-Path -LiteralPath "$projectRoot/artifacts/app/$resource")){throw "Published resource missing: $resource"}
  }

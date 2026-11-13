@@ -5,6 +5,11 @@ using System.Text;
 using System.Text.Json;
 using New7z.Core;
 
+if(args.Length>=2&&args[0]=="--stress")
+{
+    await StressRunner.RunAsync(args[1],args.Length>2?int.Parse(args[2]):64,args.Length>3?int.Parse(args[3]):10000);return;
+}
+
 if(args.Length==2&&args[0]=="--extraction-fixtures")
 {
     var fixtureRoot=Path.GetFullPath(args[1]);var fixtureSource=Path.Combine(fixtureRoot,"source");

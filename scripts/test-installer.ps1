@@ -34,6 +34,8 @@ foreach($entry in $sharedValues){
  if($key){$key.Dispose()}
 }
 $oldPackages=@(Get-AppxPackage -Name New7z.ContextMenu)
+$valueBackups | Export-Clixml -LiteralPath (Join-Path $fixture 'original-shared-values.clixml')
+$oldPackages | Export-Clixml -LiteralPath (Join-Path $fixture 'original-packages.clixml')
 $installedStatePath=Join-Path $env:LOCALAPPDATA 'Programs/New7z/installation.json'
 $originalState=if(Test-Path -LiteralPath $installedStatePath){Get-Content $installedStatePath -Raw | ConvertFrom-Json}
 $shortcut=Join-Path ([Environment]::GetFolderPath('Programs')) 'New7z.lnk'
@@ -47,11 +49,28 @@ function Preferences([switch]$ExceptCompressMenu) {
 $preferencesBefore=Preferences -ExceptCompressMenu
 $appProcess=$null
 function Check([bool]$Condition,[string]$Name){if(!$Condition){throw "FAIL: $Name"};$checks.Add($Name);Write-Host "PASS $Name"}
+function Wait-Integration([datetime]$SinceUtc){
+ $statePath=Join-Path $install 'installation.json'
+ $errorPath=Join-Path $install 'integration-error.txt'
+ $deadline=[datetime]::UtcNow.AddSeconds(300)
+ while([datetime]::UtcNow -lt $deadline){
+  if(Test-Path -LiteralPath $errorPath){
+   if((Get-Item -LiteralPath $errorPath).LastWriteTimeUtc -ge $SinceUtc){throw ('Shell integration failed: '+[IO.File]::ReadAllText($errorPath))}
+  }
+  if(Test-Path -LiteralPath $statePath){
+   if((Get-Item -LiteralPath $statePath).LastWriteTimeUtc -ge $SinceUtc){return}
+  }
+  Start-Sleep -Milliseconds 500
+ }
+ throw 'Shell integration did not finish within 300 seconds.'
+}
 function Run-Setup([string]$Extra,[string]$Log){
  $arguments='/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOICONS /NOCLOSEAPPLICATIONS /DIR="'+$install+'" /TASKS="shellmenu,fileassoc" /LOG="'+(Join-Path $fixture $Log)+'" '+$Extra
+ $startUtc=[datetime]::UtcNow
  $process=Start-Process -FilePath $SetupPath -ArgumentList $arguments -WindowStyle Hidden -PassThru
  if(!$process.WaitForExit(120000)){throw 'Installer timed out.'}
  Check ($process.ExitCode -eq 0) "setup exit code ($Log)"
+ Wait-Integration $startUtc
 }
 function Uninstall {
  $uninstaller=Join-Path $install 'Uninstall/unins000.exe'
@@ -62,6 +81,9 @@ function Uninstall {
  }
 }
 try{
+ # The test owns a temporary registry namespace after taking restorable snapshots.
+ # Otherwise a foreign legacy ProgID correctly survives our scoped uninstall.
+ foreach($path in $ownKeys){$registry.DeleteSubKeyTree($path,$false)}
  Run-Setup '' 'install-modern.log'
  $state=Get-Content -LiteralPath "$install/installation.json" -Raw | ConvertFrom-Json
  Check ($state.Version -eq $manifest.Version) 'installation state records the installed version'
@@ -151,10 +173,12 @@ try{
   foreach($path in $ownKeys){$registry.DeleteSubKeyTree($path,$false)}
   foreach($backup in $backups){& reg.exe import $backup.File | Out-Null;if($LASTEXITCODE){throw 'Cannot restore original integration.'}}
   foreach($entry in $valueBackups){
-   if($entry.Had){$key=$registry.CreateSubKey($entry.Path);try{$key.SetValue($entry.Name,$entry.Value,$entry.Kind)}finally{$key.Dispose()}}
+   if($entry.Had){$key=$registry.CreateSubKey($entry.Path);try{$value=$entry.Value;if($null -eq $value -and $entry.Kind -in @([Microsoft.Win32.RegistryValueKind]::None,[Microsoft.Win32.RegistryValueKind]::Binary)){$value=[byte[]]@()};$key.SetValue($entry.Name,$value,$entry.Kind)}finally{$key.Dispose()}}
    else{$key=$registry.OpenSubKey($entry.Path,$true);if($key){try{$key.DeleteValue($entry.Name,$false)}finally{$key.Dispose()}}}
   }
   foreach($package in $oldPackages){
+   $currentPackage=Get-AppxPackage -Name New7z.ContextMenu | Where-Object {$_.PackageFullName -eq $package.PackageFullName -and $_.InstallLocation -eq $package.InstallLocation -and $_.Status -eq 'Ok'} | Select-Object -First 1
+   if($currentPackage){continue}
    if((Split-Path $package.InstallLocation -Leaf) -eq 'ShellIdentity'){$external=Split-Path $package.InstallLocation -Parent;$identity=Join-Path $package.InstallLocation 'AppxManifest.xml'}
    elseif($originalState -and $originalState.PackageFullName -eq $package.PackageFullName){$external=$originalState.RuntimeDirectory;$identity=Join-Path $external 'ShellIdentity/AppxManifest.xml'}
    elseif($package.InstallLocation -eq (Join-Path $projectRoot 'artifacts/shell-package')){$external=Join-Path $projectRoot 'artifacts/app';$identity=Join-Path $package.InstallLocation 'AppxManifest.xml'}

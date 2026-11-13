@@ -9,16 +9,22 @@ internal static class NativeMethods
     internal delegate int ProgressCallback(ulong total, ulong done, IntPtr context);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate int ExtractItemCallback(uint index, int stage, IntPtr context);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int DragPrepareCallback(IntPtr progress,IntPtr context);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int DragPrepareThunk(IntPtr state,IntPtr progress,IntPtr context);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void DragReleaseCallback(IntPtr state);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzInitialize(string path);
     [DllImport("kernel32.dll",EntryPoint="GetFileAttributesW",CharSet=CharSet.Unicode,SetLastError=true)] internal static extern uint GetFileAttributes(string path);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void NzFree(IntPtr data);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void NzGetDragDiagnostics(out IntPtr text);
 
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzCreateArchiveDragData(IntPtr package,IntPtr owner,string archive,string? password,
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)] internal static extern int NzCreateArchiveDragDataIsolated(IntPtr package,IntPtr owner,string archive,string? password,
         [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.U4,SizeParamIndex=6)] uint[] indices,
         [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=6)] string[] outputs,uint count,
         [MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.LPWStr,SizeParamIndex=8)] string[] roots,uint rootCount,string tempPath,
-        string title,out IntPtr session);
+        string title,DragPrepareThunk prepare,IntPtr state,DragReleaseCallback release,out IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int NzArchiveDragResult(IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int NzArchiveDragWasTransferred(IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void NzReleaseArchiveDragData(IntPtr session);

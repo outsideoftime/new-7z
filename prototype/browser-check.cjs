@@ -35,8 +35,9 @@ function installedBrowser() {
   const context = await browser.newContext({viewport:{width:1440,height:960},locale:'zh-CN',colorScheme:'light'});
   const page = await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const capturedShots=[];
   const action=(name)=>page.locator(`[data-action="${name}"]`).first();
-  const shot=async(name)=>{await page.waitForTimeout(200);await page.screenshot({path:path.join(output,name+'.png'),fullPage:true,animations:'disabled',style:'#notification { visibility: hidden; }'});};
+  const shot=async(name)=>{await page.waitForTimeout(200);await page.screenshot({path:path.join(output,name+'.png'),fullPage:true,animations:'disabled',style:'#notification { visibility: hidden; }'});capturedShots.push(name+'.png');};
   const check=async(name,fn)=>{await fn();records.push({name,result:'pass'});};
   const axe=async(name)=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();fs.writeFileSync(path.join(output,name+'-axe.json'),JSON.stringify(result.violations,null,2));assert.deepEqual(result.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)})),[],name+' accessibility');records.push({name:name+' axe',result:'pass'});};
   try{
@@ -119,8 +120,10 @@ function installedBrowser() {
     await check('本地直接打开与图库完整性',async()=>{
       const {pathToFileURL}=require('node:url');
       await page.goto(pathToFileURL(path.join(root,'prototype/index.html')).href);await action('open').click();await page.locator('[data-action="file"][data-id="cover"]').click();await page.locator('#preview-image').waitFor();await page.keyboard.press('Escape');
-      await page.goto(pathToFileURL(path.join(root,'docs/原型总览.html')).href);await page.waitForFunction(()=>Array.from(document.images).every(i=>i.complete&&i.naturalWidth>0));assert.equal(await page.locator('figure').count(),13);
-      const prior=JSON.parse(fs.readFileSync(path.join(root,'docs/local-preview-check.json'),'utf8'));fs.writeFileSync(path.join(root,'docs/local-preview-check.json'),JSON.stringify({...prior,directFilePreview:'pass',galleryImages:13},null,2));
+      const gallery=path.join(output,'gallery.html');
+      fs.writeFileSync(gallery,'<!doctype html><meta charset="utf-8"><title>New7z prototype verification</title>'+capturedShots.map(file=>`<figure><img src="${encodeURIComponent(file)}" alt="${file}"><figcaption>${file}</figcaption></figure>`).join(''));
+      await page.goto(pathToFileURL(gallery).href);await page.waitForFunction(()=>Array.from(document.images).every(i=>i.complete&&i.naturalWidth>0));assert.equal(await page.locator('figure').count(),13);
+      fs.writeFileSync(path.join(output,'local-preview-check.json'),JSON.stringify({directFilePreview:'pass',galleryImages:capturedShots.length},null,2));
     });
     assert.deepEqual(errors,[],'browser errors');records.push({name:'浏览器运行时错误',result:'pass'});
     fs.writeFileSync(path.join(output,'browser-results.json'),JSON.stringify({date:'2026-11-03',browser:await browser.version(),checks:records,screenshots:fs.readdirSync(output).filter(n=>n.endsWith('.png'))},null,2));

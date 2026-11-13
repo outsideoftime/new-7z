@@ -8,10 +8,10 @@ public sealed partial class MainWindow
 {
     private void AddCompressionSettings(StackPanel panel)
     {
-        var formats=new[]{"7z","zip","tar"};
+        var formats=new[]{"7z","zip","tar","zst","lz4"};
         var section=Stack(12);
         section.Children.Add(Text(T("默认压缩格式","Default archive format"),18,true));
-        var choice=new ComboBox{Header=T("新建压缩包时默认使用","Default for new archives"),ItemsSource=new[]{T("7z（LZMA2，压缩率最高）","7z (LZMA2, smallest)"),T("ZIP（兼容性最好）","ZIP (most compatible)"),T("TAR（不压缩，仅打包）","TAR (uncompressed archive)")},SelectedIndex=Math.Max(0,Array.IndexOf(formats,UserSettings.NormalizeFormat(settings.DefaultFormat))),HorizontalAlignment=HorizontalAlignment.Stretch};
+        var choice=new ComboBox{Header=T("新建压缩包时默认使用","Default for new archives"),ItemsSource=new[]{T("7z（LZMA2，压缩率最高）","7z (LZMA2, smallest)"),T("ZIP（兼容性最好）","ZIP (most compatible)"),T("TAR（不压缩，仅打包）","TAR (uncompressed archive)"),T("Zstandard（单文件）","Zstandard (single file)"),T("LZ4（单文件）","LZ4 (single file)")},SelectedIndex=Math.Max(0,Array.IndexOf(formats,UserSettings.NormalizeFormat(settings.DefaultFormat))),HorizontalAlignment=HorizontalAlignment.Stretch};
         choice.SelectionChanged+=(_,_)=>
         {
             var value=formats[choice.SelectedIndex];

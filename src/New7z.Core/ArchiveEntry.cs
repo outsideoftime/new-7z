@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 namespace New7z.Core;
 
 public sealed record ArchiveEntry
@@ -34,15 +35,15 @@ public sealed record ArchiveEntry
     public bool Encrypted { get; init; }
     public bool IsLink { get; init; }
     public long FileTime { get; init; }
-    public string NormalizedPath => Path.Replace('\\', '/').TrimEnd('/');
-    public string Name => NormalizedPath.Split('/').Last();
-    public string Directory => NormalizedPath.Contains('/') ? NormalizedPath[..NormalizedPath.LastIndexOf('/')] : "";
-    public string Extension => System.IO.Path.GetExtension(Name).ToLowerInvariant();
-    public string SizeText => IsDirectory ? Loc.T("文件夹", "Folder") : ByteSize.Format(Size);
-    public string PackedSizeText => PackedSize is { } n ? ByteSize.Format(n) : "—";
-    public string ModifiedText => FileTime > 0 ? DateTime.FromFileTimeUtc(FileTime).ToLocalTime().ToString("yyyy/MM/dd HH:mm") : "—";
-    public bool IsImage => ImageExtensions.Contains(Extension);
-    public bool IsText => TextExtensions.Contains(Extension) || TextFileNames.Contains(Name);
+    [JsonIgnore] public string NormalizedPath => Path.Replace('\\', '/').TrimEnd('/');
+    [JsonIgnore] public string Name => NormalizedPath.Split('/').Last();
+    [JsonIgnore] public string Directory => NormalizedPath.Contains('/') ? NormalizedPath[..NormalizedPath.LastIndexOf('/')] : "";
+    [JsonIgnore] public string Extension => System.IO.Path.GetExtension(Name).ToLowerInvariant();
+    [JsonIgnore] public string SizeText => IsDirectory ? Loc.T("文件夹", "Folder") : ByteSize.Format(Size);
+    [JsonIgnore] public string PackedSizeText => PackedSize is { } n ? ByteSize.Format(n) : "—";
+    [JsonIgnore] public string ModifiedText => FileTime is > 0 and <= 2650467743999999999 ? DateTime.FromFileTimeUtc(FileTime).ToLocalTime().ToString("yyyy/MM/dd HH:mm") : "—";
+    [JsonIgnore] public bool IsImage => ImageExtensions.Contains(Extension);
+    [JsonIgnore] public bool IsText => TextExtensions.Contains(Extension) || TextFileNames.Contains(Name);
 }
 public static class ByteSize
 {

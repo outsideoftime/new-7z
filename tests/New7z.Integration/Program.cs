@@ -108,7 +108,7 @@ try
     Assert(tarPasswordRejected&&!File.Exists(Path.Combine(root,"password.tar")),"TAR rejects passwords without creating output");
     var methodText=Path.Combine(root,"方法测试.txt");const string methodMarker="compression method";
     await File.WriteAllTextAsync(methodText,string.Concat(Enumerable.Repeat("New7z compression method test line 0123456789\n",5000)),new UTF8Encoding(false));
-    foreach(var method in new[]{"LZMA2","LZMA","BZip2","PPMd","Deflate","Copy"})
+    foreach(var method in CompressionMethods.SevenZip)
     {
         var archive=Path.Combine(root,"method-"+method+".7z");
         await engine.CreateAsync(archive,[methodText],"7z",method:method);
@@ -116,13 +116,13 @@ try
         Assert(ArchiveEngine.DecodeText(await engine.ReadAsync(archive,entry)).Contains(methodMarker),"7z method "+method+" roundtrip");
         await engine.TestAsync(archive);checks.Add("7z method "+method+" integrity");
     }
-    foreach(var method in new[]{"Deflate","Deflate64","BZip2","LZMA","PPMd","Copy"})
+    foreach(var method in CompressionMethods.Zip)
     {
         var archive=Path.Combine(root,"method-"+method+".zip");
         await engine.CreateAsync(archive,[methodText],"zip",method:method);
         var entry=(await engine.ListAsync(archive)).Single();
         Assert(ArchiveEngine.DecodeText(await engine.ReadAsync(archive,entry)).Contains(methodMarker),"ZIP method "+method+" roundtrip");
-        var expected=method switch{"Deflate"=>8,"Deflate64"=>9,"BZip2"=>12,"LZMA"=>14,"PPMd"=>98,_=>0};
+        var expected=method switch{"Deflate"=>8,"Deflate64"=>9,"ZSTD"=>93,"BZip2"=>12,"LZMA"=>14,"PPMd"=>98,_=>0};
         var actual=BitConverter.ToUInt16(await File.ReadAllBytesAsync(archive),8);
         Assert(actual==expected,"ZIP method "+method+" header id ("+actual+")");
         await engine.TestAsync(archive);checks.Add("ZIP method "+method+" integrity");
@@ -267,13 +267,14 @@ try
     try{await engine.ExtractAsync(limitArchive,[large],callbackOutput,progress:new InlineProgress(_=>throw new IOException(callbackMessage)));throw new Exception("Callback error ignored");}
     catch(IOException ex)when(ex.Message==callbackMessage){Assert(!Directory.EnumerateFiles(callbackOutput,"*.partial",SearchOption.AllDirectories).Any(),"batch preserves managed callback exception and cleans output");}
     var emptyFile=Path.Combine(root,"empty.txt");await File.WriteAllBytesAsync(emptyFile,[]);
-    foreach(var format in new[]{"7z","zip","tar"})
+    foreach(var format in new[]{"7z","zip","tar","zst","lz4"})
     {
-        var archive=Path.Combine(root,"empty."+format);await engine.CreateAsync(archive,[emptyFile],format);
+        var archive=Path.Combine(root,(format is "zst" or "lz4"?"empty.txt.":"empty.")+format);await engine.CreateAsync(archive,[emptyFile],format);
         var output=Path.Combine(root,"empty-"+format);var extracted=await engine.ExtractAsync(archive,await engine.ListAsync(archive),output);
         Assert(extracted.Extracted==1&&new FileInfo(Path.Combine(output,"empty.txt")).Length==0,"batch commits zero-length file "+format);
     }
     using var cts=new CancellationTokenSource();cts.Cancel();try{await engine.ListAsync(limitArchive,cancellation:cts.Token);throw new Exception("Cancellation ignored");}catch(OperationCanceledException){checks.Add("cancel before start");}
+    await SafetyTests.RunAsync(root,checks);
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{passed=checks.Count,checks},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
     if(args.Contains("--keep")){Console.WriteLine("Fixtures: "+root);root="";}
 }

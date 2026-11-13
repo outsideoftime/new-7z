@@ -1,5 +1,5 @@
 #ifndef AppVersion
- #define AppVersion "1.0.1"
+ #define AppVersion "1.0.2"
 #endif
 #ifndef BuildId
  #error BuildId is required
@@ -173,11 +173,14 @@ begin
     CleanCrashDumps;
   end
   else if CurStep = ssPostInstall then begin
+    { Appx registration can take a minute or more on some machines; run it detached
+      so the installer does not appear frozen. }
+    DeleteFile(ExpandConstant('{app}\integration-error.txt'));
+    Log('Starting shell integration in the background.');
     if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-      IntegrationParameters('Install', True), '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
-      or (ResultCode <> 0) then begin
-      Log('Shell integration failed. See integration-error.txt in the installation folder.');
-      SuppressibleMsgBox('程序文件已安装，但右键菜单注册未完成。详细原因见安装目录中的 integration-error.txt。', mbError, MB_OK, IDOK);
+      IntegrationParameters('Install', True), '', SW_HIDE, ewNoWait, ResultCode) then begin
+      Log('Could not start shell integration.');
+      SuppressibleMsgBox('程序文件已安装，但右键菜单注册组件未能启动。请稍后在设置中点击「修复右键菜单注册」。', mbError, MB_OK, IDOK);
     end;
   end;
 end;

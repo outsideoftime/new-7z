@@ -56,7 +56,8 @@ internal static class ShellPaths
         return string.IsNullOrWhiteSpace(name)?T("归档","Archive"):name;
     }
     public static string SuggestedFolder(IReadOnlyList<string> paths)=>paths.Count==0?Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments):ParentOf(paths[0]);
-    public static string CreateTarget(ShellRequest request,string format)=>UniqueOutput(System.IO.Path.Combine(SuggestedFolder(request.Paths),SuggestedName(request.Paths)+"."+format));
+    public static string SuggestedFileName(IReadOnlyList<string> paths,string format)=>((format is "zst" or "lz4")&&paths.Count==1&&File.Exists(paths[0])?System.IO.Path.GetFileName(paths[0]):SuggestedName(paths))+"."+format;
+    public static string CreateTarget(ShellRequest request,string format)=>UniqueOutput(System.IO.Path.Combine(SuggestedFolder(request.Paths),SuggestedFileName(request.Paths,format)));
     private static string ParentOf(string path)
     {
         var full=System.IO.Path.GetFullPath(path);

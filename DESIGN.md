@@ -80,6 +80,12 @@ Explorer 任务采用独立 `ShellTaskWindow`，任务窗口目标大小 600 × 
 
 ## Components
 
+2026-11-13 原生归档浏览器：名称、大小、压缩后大小、修改时间使用可聚焦的原生排序按钮，文件夹始终在前，未知元数据在后；排序保留选择。目录切换复用同一个虚拟化 ListView，关闭条目插入/移除过渡；搜索等待中文组合输入结束，非空输入合并 180 ms 内的更新。按用户要求，右侧改为常显的 240 DIP 整包属性栏，与左侧文件列表用 1 DIP 竖线分隔，移除「属性」按钮。栏内标题 16/600，辅助标签 12，数值 18/600，分别显示文件数量、原始大小、压缩后大小；文件名和数值可选择复制。统计不随选择、目录或搜索变化，压缩后大小为归档文件本身的实际字节数（包含头部，适用于固实压缩），打开或修改归档后重新计算。窄窗口仍保留右侧属性，左侧最小 680 DIP 的表格内部横向滚动，ListView 继续拥有纵向滚动。竖线消费 `DividerStrokeColorDefaultBrush`，辅助文字消费 `TextFillColorSecondaryBrush`，由 WinUI ThemeResource 跟随浅深及高对比主题，不另设配色。归档路径、搜索、排序仅保留在当前窗口，不写入共享 URL。
+
+文件类型图标由 `FileTypeIcons` 统一映射扩展名与特殊文件名，复用缓存的 48 px PNG ImageSource，以 24 DIP 显示；文件夹继续使用系统主题图标，未知类型回退文本文件图标。SVG 源及 MIT 声明保留在 `Assets/FileTypes/Source`，导入脚本为 `scripts/import-file-icons.cjs`。本轮不替换品牌、强调色、原生主题资源或系统关联图标。
+
+共享任务卡片按任务 ID 复用，只更新文字和进度，任务文件在后台读取；当前文件行预留高度，进度更新不重建卡片。压缩与快捷任务共用 7z/ZIP/TAR/Zstandard/LZ4 选择，后两种明确标为单文件流，不提供密码，多个文件需先打包为 TAR。
+
 系统集成设置沿用原生卡片、按钮与 InfoBar。菜单修复与关联注册均在原位反馈，按钮处理中保持原尺寸并禁用。默认应用的格式选择交给 Windows 设置；应用不绘制替代的系统选择器。
 
 安装向导是独立的系统流程：复用 Inno Setup 的原生现代 Windows 11 控件与简体中文消息，主题跟随系统，保持目录选择→可选任务→安装→完成的顺序。只把安装位置、菜单和快捷方式作为用户决策，不在向导中暴露构建参数。现代菜单条件及兼容回退放在安装前说明中；不会代用户启用开发者模式或信任证书。用户数据保留、卸载与覆盖安装属于同一安装器责任边界，来源见 `docs/安装包发布.md`。
@@ -91,6 +97,8 @@ Explorer 任务采用独立 `ShellTaskWindow`，任务窗口目标大小 600 × 
 共享原型模块位于 `prototype/app.js`：`render` 导航；`archiveTable` 表格；`showDialog` 模态；`notify` 提示；`addTask` 任务状态机；`setTheme` 主题适配。控件统一用按钮、输入、标签和原生 select，不自造列表框。
 
 `prototype/preview.js` 复用 `showDialog` 提供图片与纯文本只读预览，窗口最大宽度 1120 px；图像画布使用 background 层，文本使用 surface 层与 mono 字体。行号用 muted，查找高亮使用 selected + primary 描边。顶部位置/切换/缩放与底部关闭保持稳定，内容自身滚动；首尾切换禁用，不跨越当前目录。样式位于 styles.css，继续消费既有语义 token，不引入独立配色。
+
+原生预览由 `MainWindow.Preview.cs` 维护独立的 owner 窗口，归属当前主窗口；双击事件完成后排队打开一次，不使用定时置顶或重复抢焦点。首个条目的控件显隐和加载状态在窗口激活前配置完成，查找提示与底部元数据预留高度。文本预览复用同一个只读 TextBox：查找只更新匹配选择，换行只更新布局属性；不因输入重建控件或重读归档。关闭窗口立即取消当前读取并丢弃过期结果。
 
 `prototype/context-menu.js` 是菜单定义与浮层的共享 owner，`context-menu-app.js` 连接原型选择与已有操作，场景图在 `context-menu-design.html`。短暂菜单使用 surface、border、hover、muted、既有浮层阴影，默认宽 284 px、行高至少 38 px，具备浅深/高对比降级。原生交付改用 WinUI flyout，不照搬 HTML 层。菜单行为及 Shell 作用域见 [右键菜单设计](docs/右键菜单设计.md)。
 

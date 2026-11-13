@@ -20,6 +20,14 @@ public sealed partial class MainWindow
         await process.WaitForExitAsync();
         if(process.ExitCode!=0)throw new IOException(T("注册未完成。请查看安装目录中的 integration-error.txt。","Registration did not complete. See integration-error.txt in the install folder."));
     }
+    private void ShowPendingIntegrationError()
+    {
+        if(AppEnvironment.IsPackaged)return;
+        var folder=new DirectoryInfo(AppContext.BaseDirectory.TrimEnd('\\'));
+        var root=folder.Parent?.Name=="Versions"?folder.Parent.Parent!.FullName:folder.FullName;
+        if(!File.Exists(System.IO.Path.Combine(root,"integration-error.txt")))return;
+        Notify(T("右键菜单注册未完成，可在设置 → 资源管理器右键菜单中点击「修复右键菜单注册」。","Context menu registration did not complete. Repair it in Settings → Explorer context menu."),InfoBarSeverity.Warning);
+    }
     private void AddPackagedAssociationSettings(StackPanel panel)
     {
         var card=Stack(14);

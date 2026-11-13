@@ -27,7 +27,7 @@ static DWORD commands(){DWORD value=preference(L"Commands",kAllCommands),version
 static bool english(){wchar_t language[8]{};DWORD bytes=sizeof(language);if(RegGetValueW(HKEY_CURRENT_USER,L"Software\\New7z\\Explorer",L"Language",RRF_RT_REG_SZ,nullptr,language,&bytes)==ERROR_SUCCESS)return _wcsicmp(language,L"en")==0;return PRIMARYLANGID(GetUserDefaultUILanguage())!=LANG_CHINESE;}
 static std::wstring appPath(){wchar_t path[32768];GetModuleFileNameW(moduleHandle,path,32768);PathRemoveFileSpecW(path);return std::wstring(path)+L"\\New7z.App.exe";}
 static std::vector<std::wstring> getPaths(IShellItemArray* items){std::vector<std::wstring> paths;if(!items)return paths;DWORD count=0;items->GetCount(&count);if(count>10000)return paths;for(DWORD i=0;i<count;i++){IShellItem* item=nullptr;PWSTR path=nullptr;if(SUCCEEDED(items->GetItemAt(i,&item))){if(SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))){paths.emplace_back(path);CoTaskMemFree(path);}item->Release();}}return paths;}
-static bool archive(const std::wstring& path){auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY))return false;auto ext=std::wstring(PathFindExtensionW(path.c_str()));std::transform(ext.begin(),ext.end(),ext.begin(),towlower);return ext==L".7z"||ext==L".zip"||ext==L".rar"||ext==L".tar"||ext==L".gz"||ext==L".xz"||ext==L".bz2"||ext==L".iso";}
+static bool archive(const std::wstring& path){auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY))return false;auto ext=std::wstring(PathFindExtensionW(path.c_str()));std::transform(ext.begin(),ext.end(),ext.begin(),towlower);return ext==L".7z"||ext==L".zip"||ext==L".rar"||ext==L".tar"||ext==L".gz"||ext==L".xz"||ext==L".bz2"||ext==L".iso"||ext==L".zst"||ext==L".zstd"||ext==L".tzst"||ext==L".lz4";}
 static bool allArchives(const std::vector<std::wstring>& paths){return !paths.empty()&&std::all_of(paths.begin(),paths.end(),archive);}
 static DWORD selectionMask(const std::vector<std::wstring>& paths){if(paths.empty())return 0;return allArchives(paths)?(paths.size()==1?31:22):480;}
 static std::wstring quoteJson(const std::wstring& s){std::wstring out=L"\"";for(auto c:s){if(c==L'"')out+=L"\\\"";else if(c==L'\\')out+=L"\\\\";else if(c<32){wchar_t b[8];swprintf_s(b,L"\\u%04x",unsigned(c));out+=b;}else out+=c;}return out+L"\"";}
@@ -103,5 +103,3 @@ public:
 STDAPI DllGetClassObject(REFCLSID cls,REFIID id,void** out){*out=nullptr;if(cls!=CLSID_New7z&&cls!=CLSID_New7zClassic)return CLASS_E_CLASSNOTAVAILABLE;auto factory=new Factory(cls);auto hr=factory->QueryInterface(id,out);factory->Release();return hr;}
 STDAPI DllCanUnloadNow(){return objects==0&&locks==0?S_OK:S_FALSE;}
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID){if(reason==DLL_PROCESS_ATTACH){moduleHandle=instance;DisableThreadLibraryCalls(instance);}return TRUE;}
-
-

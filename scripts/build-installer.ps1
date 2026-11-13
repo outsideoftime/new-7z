@@ -1,6 +1,13 @@
-param([string]$IsccPath,[string]$SigningCertificateThumbprint,[switch]$Untrimmed)
+param([string]$IsccPath,[string]$SigningCertificateThumbprint,[switch]$Untrimmed,[switch]$RequireSignature,[string]$TimestampServer='http://timestamp.digicert.com')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
+if($RequireSignature -and !$SigningCertificateThumbprint){throw 'A trusted code signing certificate is required for a signed release. Pass -SigningCertificateThumbprint.'}
+$signingCertificate=$null
+if($SigningCertificateThumbprint){
+ if($SigningCertificateThumbprint -notmatch '^[a-fA-F0-9]{40}$'){throw 'Invalid signing certificate thumbprint.'}
+ $signingCertificate=Get-Item -LiteralPath "Cert:/CurrentUser/My/$SigningCertificateThumbprint"
+ if(!$signingCertificate.HasPrivateKey -or !$signingCertificate.Verify() -or $signingCertificate.Subject -eq $signingCertificate.Issuer){throw 'Release signing requires a trusted certificate and its private key.'}
+}
 $version=([xml](Get-Content "$projectRoot/Directory.Build.props" -Raw)).Project.PropertyGroup.Version
 if(!$IsccPath){
  foreach($candidate in @("$projectRoot/artifacts/tools/InnoSetup/ISCC.exe",'C:/Program Files (x86)/Inno Setup 6/ISCC.exe','C:/Program Files/Inno Setup 7/ISCC.exe')){if(Test-Path -LiteralPath $candidate){$IsccPath=$candidate;break}}
@@ -24,6 +31,7 @@ try{
   if($kept.Count -eq 0){Remove-Item -LiteralPath $directory.FullName -Recurse -Force}
  }
  Copy-Item -LiteralPath 'artifacts/native/x64/New7z.ShellHost.exe' -Destination "$payload/New7z.ShellHost.exe" -Force
+ foreach($required in @('New7z.EngineHost.exe','New7z.EngineHost.dll','New7z.EngineHost.deps.json','New7z.EngineHost.runtimeconfig.json','Assets/FileTypes/csharp.png','Licenses/FileTypeIcons-MIT.txt','Licenses/K4os-LZ4-MIT.txt','Licenses/LZ4-BSD.txt','Licenses/xxHash-BSD.txt','Licenses/ZstdSharp-License.txt','Licenses/Zstandard-BSD.txt')){if(!(Test-Path -LiteralPath (Join-Path $payload $required))){throw "Release worker, icon or license missing: $required"}}
  New-Item -ItemType Directory -Path "$payload/Licenses/Source" -Force | Out-Null
  Copy-Item -LiteralPath "$projectRoot/LICENSE" -Destination "$payload/Licenses/New7z-MIT.txt" -Force
  Copy-Item -LiteralPath "$projectRoot/THIRD-PARTY-NOTICES.md" -Destination "$payload/Licenses/THIRD-PARTY-NOTICES.md" -Force
@@ -47,6 +55,11 @@ try{
  Copy-Item -LiteralPath 'shell/AppxManifest.xml' -Destination "$identity/AppxManifest.xml" -Force
  $manifestText=Get-Content -LiteralPath "$identity/AppxManifest.xml" -Raw
  $manifestText=[regex]::Replace($manifestText,'(<Identity[^>]*Version=")[0-9.]+(")',('${1}'+$version+'.0${2}'))
+ if($signingCertificate){
+  $identityXml=[xml]$manifestText
+  $identityXml.Package.Identity.SetAttribute('Publisher',$signingCertificate.Subject)
+  $manifestText=$identityXml.OuterXml
+ }
  Set-Content -LiteralPath "$identity/AppxManifest.xml" -Value $manifestText -Encoding utf8
  Copy-Item -LiteralPath '图标/logo.png' -Destination "$identity/Assets/logo.png" -Force
  $sdk=Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Directory | Where-Object {$_.Name -match '^10\.' -and (Test-Path -LiteralPath "$($_.FullName)/x64/makeappx.exe")} | Sort-Object {[version]$_.Name} -Descending | Select-Object -First 1
@@ -60,13 +73,9 @@ try{
  if($LASTEXITCODE){throw 'Identity package build failed.'}
  Copy-Item -LiteralPath $identityPackage -Destination "$identity/New7z.ContextMenu.msix" -Force
  if($SigningCertificateThumbprint){
-  $cert=Get-Item -LiteralPath "Cert:/CurrentUser/My/$SigningCertificateThumbprint"
-  if(!$cert.HasPrivateKey -or $cert.Subject -ne 'CN=New7z'){throw 'Signing requires an explicitly selected certificate with private key and subject CN=New7z.'}
-  foreach($file in @("$identity/New7z.ContextMenu.msix","$payload/New7z.App.exe","$payload/New7z.Shell.dll","$payload/New7z.ShellHost.exe")){
-   & "$($sdk.FullName)/x64/signtool.exe" sign /fd SHA256 /sha1 $SigningCertificateThumbprint $file
-   if($LASTEXITCODE){throw 'Code signing failed.'}
-  }
-  Set-Content -LiteralPath "$identity/signed-package.marker" -Value 'Explicit certificate signing enabled.'
+  $signingFiles=@("$identity/New7z.ContextMenu.msix","$payload/New7z.App.exe","$payload/New7z.App.dll","$payload/New7z.Core.dll","$payload/New7z.EngineHost.exe","$payload/New7z.EngineHost.dll","$payload/New7z.Native.dll","$payload/7z.dll","$payload/New7z.Shell.dll","$payload/New7z.ShellHost.exe")
+  & "$PSScriptRoot/sign-code.ps1" -Path $signingFiles -CertificateThumbprint $SigningCertificateThumbprint -TimestampServer $TimestampServer -SignToolPath "$($sdk.FullName)/x64/signtool.exe"
+  Set-Content -LiteralPath "$identity/signed-package.marker" -Value $signingCertificate.Thumbprint
  }elseif(Test-Path -LiteralPath "$identity/signed-package.marker"){Remove-Item -LiteralPath "$identity/signed-package.marker"}
  foreach($required in @('New7z.App.exe','New7z.App.pri','resources.pri','MainWindow.xbf','ShellTaskWindow.xbf','7z.dll','New7z.Native.dll','New7z.Shell.dll','New7z.ShellHost.exe','Assets/New7z.ico','Assets/Formats/7z.ico','Assets/Formats/zip.ico','Licenses/LGPL.txt','Licenses/Source/7z2605-src.7z')){if(!(Test-Path -LiteralPath (Join-Path $payload $required))){throw "Release payload missing: $required"}}
  $hashes=@(Get-ChildItem -LiteralPath $payload -File -Recurse | Where-Object Extension -ne '.pdb' | Sort-Object FullName | ForEach-Object {[pscustomobject]@{File=[IO.Path]::GetRelativePath($payload,$_.FullName);SHA256=(Get-FileHash -LiteralPath $_.FullName).Hash;Size=$_.Length}})
@@ -78,7 +87,7 @@ try{
  & $IsccPath /Q "/DAppVersion=$version" "/DBuildId=$buildId" "/DPayloadDir=$payload" "/DReleaseDir=$release" installer/New7z.iss
  if($LASTEXITCODE){throw 'Installer compilation failed.'}
  $setup=Join-Path $release "New7z-$version-x64-Setup.exe"
- if($SigningCertificateThumbprint){& "$($sdk.FullName)/x64/signtool.exe" sign /fd SHA256 /sha1 $SigningCertificateThumbprint $setup;if($LASTEXITCODE){throw 'Installer signing failed.'}}
+ if($SigningCertificateThumbprint){& "$PSScriptRoot/sign-code.ps1" -Path $setup -CertificateThumbprint $SigningCertificateThumbprint -TimestampServer $TimestampServer -SignToolPath "$($sdk.FullName)/x64/signtool.exe"}
  $hash=(Get-FileHash -LiteralPath $setup).Hash
  Set-Content -LiteralPath "$release/SHA256SUMS.txt" -Encoding ascii -Value "$hash  $([IO.Path]::GetFileName($setup))"
  Write-Host "Installer: $setup"

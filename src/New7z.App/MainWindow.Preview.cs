@@ -23,9 +23,8 @@ public sealed partial class MainWindow
     [DllImport("user32.dll")]
     [return:MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out NativePoint point);
-    [DllImport("user32.dll")]
-    [return:MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll",EntryPoint="SetWindowLongPtrW")]
+    private static extern IntPtr SetPreviewWindowOwner(IntPtr window,int index,IntPtr owner);
 
     private static bool InsideButton(object? source)
     {
@@ -107,13 +106,13 @@ public sealed partial class MainWindow
         var encoding=new ComboBox{ItemsSource=new[]{T("自动","Auto"),"UTF-8","GB18030","UTF-16 LE"},SelectedIndex=0,MinWidth=110,Height=32,VerticalAlignment=VerticalAlignment.Center};
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(encoding,T("文本编码","Text encoding"));controls.Children.Add(encoding);
         var wrapLabel=Text(T("自动换行","Wrap"),12);wrapLabel.VerticalAlignment=VerticalAlignment.Center;controls.Children.Add(wrapLabel);
-        var wrap=new ToggleSwitch{IsOn=true,VerticalAlignment=VerticalAlignment.Center,OnContent=T("开","On"),OffContent=T("关","Off"),MinHeight=32};controls.Children.Add(wrap);
+        var wrap=new ToggleSwitch{Name="PreviewWrap",IsOn=true,VerticalAlignment=VerticalAlignment.Center,OnContent=T("开","On"),OffContent=T("关","Off"),MinHeight=32};controls.Children.Add(wrap);
         Grid.SetRow(controls,1);body.Children.Add(controls);
 
-        var find=new TextBox{PlaceholderText=T("查找文本内容","Find in text"),Header=T("内容查找","Find content")};Grid.SetRow(find,2);body.Children.Add(find);
-        var matches=Text("",12);Grid.SetRow(matches,3);body.Children.Add(matches);
-        var host=new Grid{Background=(Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],CornerRadius=new CornerRadius(6),VerticalAlignment=VerticalAlignment.Stretch};Grid.SetRow(host,4);body.Children.Add(host);
-        var metadata=Text("",12);Grid.SetRow(metadata,5);body.Children.Add(metadata);
+        var find=new TextBox{Name="PreviewFind",PlaceholderText=T("查找文本内容","Find in text"),Header=T("内容查找","Find content")};Grid.SetRow(find,2);body.Children.Add(find);
+        var matches=Text("",12);matches.MinHeight=18;Grid.SetRow(matches,3);body.Children.Add(matches);
+        var host=new Grid{Name="PreviewContentHost",Background=(Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],CornerRadius=new CornerRadius(6),VerticalAlignment=VerticalAlignment.Stretch};Grid.SetRow(host,4);body.Children.Add(host);
+        var metadata=Text("",12);metadata.Name="PreviewMetadata";metadata.MinHeight=18;Grid.SetRow(metadata,5);body.Children.Add(metadata);
         Grid.SetRow(body,1);root.Children.Add(body);
         previewWindow.Content=root;
 
@@ -123,16 +122,30 @@ public sealed partial class MainWindow
         var width=Math.Min((int)(1100*scale),area.Width-60);var height=Math.Min((int)(800*scale),area.Height-60);
         previewWindow.AppWindow.MoveAndResize(new RectInt32(area.X+(area.Width-width)/2,area.Y+(area.Height-height)/2,width,height));
         var closed=new TaskCompletionSource();
-        previewWindow.Closed+=(_,_)=>closed.TrySetResult();
+        previewWindow.Closed+=(_,_)=>{++sequence;readCancellation?.Cancel();previewDragging=false;closed.TrySetResult();};
         var previewHwnd=WinRT.Interop.WindowNative.GetWindowHandle(previewWindow);
-        void BringToFront(){try{previewWindow.Activate();previewWindow.AppWindow.MoveInZOrderAtTop();SetForegroundWindow(previewHwnd);}catch{}}
-        BringToFront();
-        // A double-click finishes its second click on the main window after this handler; repeat
-        // briefly so the preview is not pushed behind it again.
-        previewWindow.DispatcherQueue.TryEnqueue(BringToFront);
-        _=Task.Run(async()=>{foreach(var delay in new[]{150,350,700}){await Task.Delay(delay);if(closed.Task.IsCompleted)return;previewWindow.DispatcherQueue.TryEnqueue(BringToFront);}});
+        // An owned window stays above its parent without repeatedly stealing focus.
+        SetPreviewWindowOwner(previewHwnd,-8,Hwnd); // GWLP_HWNDPARENT
 
         Image? image=null;BitmapImage? bitmap=null;
+        var textContent=new TextBox{Name="PreviewTextContent",VerticalAlignment=VerticalAlignment.Stretch,HorizontalAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,FontFamily=new FontFamily("Consolas"),FontSize=13,BorderThickness=new Thickness(0),Background=new SolidColorBrush(Microsoft.UI.Colors.Transparent)};
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(textContent,T("只读文本内容，带行号","Read-only text with line numbers"));
+        ScrollViewer.SetVerticalScrollBarVisibility(textContent,ScrollBarVisibility.Auto);
+        void UpdateTextMatches()
+        {
+            if(data==null||!candidates[current].IsText)return;
+            var numbered=textContent.Text;var q=find.Text;
+            if(q.Length==0){matches.Text="";textContent.Select(textContent.SelectionStart,0);return;}
+            var offset=numbered.IndexOf(q,StringComparison.CurrentCultureIgnoreCase);var count=0;
+            for(var start=0;(start=numbered.IndexOf(q,start,StringComparison.CurrentCultureIgnoreCase))>=0;start+=q.Length)count++;
+            matches.Text=count>0?T($"找到 {count} 处匹配，已选择第一处",$"Found {count} matches; selected the first"):T("没有找到匹配内容","No matches found");
+            if(offset>=0)textContent.Select(offset,q.Length);else textContent.Select(textContent.SelectionStart,0);
+        }
+        void UpdateTextWrapping()
+        {
+            textContent.TextWrapping=wrap.IsOn?TextWrapping.Wrap:TextWrapping.NoWrap;
+            ScrollViewer.SetHorizontalScrollBarVisibility(textContent,wrap.IsOn?ScrollBarVisibility.Disabled:ScrollBarVisibility.Auto);
+        }
         void RenderText()
         {
             if(data==null)return;
@@ -142,13 +155,10 @@ public sealed partial class MainWindow
                 if(decoded.Contains('\0'))throw new InvalidDataException(T("内容可能为二进制文件，请更换编码或先解压查看。","The content looks binary. Try another encoding or extract the file first."));
                 var lines=decoded.Replace("\r\n","\n",StringComparison.Ordinal).Replace('\r','\n').Split('\n');
                 var numbered=string.Join(Environment.NewLine,lines.Take(100000).Select((line,i)=>$"{i+1,5}  {line}"));
-                var box=new TextBox{VerticalAlignment=VerticalAlignment.Stretch,HorizontalAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Top,IsReadOnly=true,AcceptsReturn=true,TextWrapping=wrap.IsOn?TextWrapping.Wrap:TextWrapping.NoWrap,FontFamily=new FontFamily("Consolas"),FontSize=13,BorderThickness=new Thickness(0),Background=new SolidColorBrush(Microsoft.UI.Colors.Transparent)};
                 // Set the text after AcceptsReturn/TextWrapping so WinUI keeps every line.
-                box.Text=numbered;
-                ScrollViewer.SetHorizontalScrollBarVisibility(box,wrap.IsOn?ScrollBarVisibility.Disabled:ScrollBarVisibility.Auto);ScrollViewer.SetVerticalScrollBarVisibility(box,ScrollBarVisibility.Auto);
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box,T("只读文本内容，带行号","Read-only text with line numbers"));host.Children.Clear();host.Children.Add(box);
-                var q=find.Text;
-                if(q.Length>0){var offset=numbered.IndexOf(q,StringComparison.CurrentCultureIgnoreCase);var count=0;for(var start=0;(start=numbered.IndexOf(q,start,StringComparison.CurrentCultureIgnoreCase))>=0;start+=q.Length)count++;matches.Text=count>0?T($"找到 {count} 处匹配，已选择第一处",$"Found {count} matches; selected the first"):T("没有找到匹配内容","No matches found");if(offset>=0)box.Select(offset,q.Length);}else matches.Text="";
+                UpdateTextWrapping();textContent.Text=numbered;
+                if(!host.Children.Contains(textContent)){host.Children.Clear();host.Children.Add(textContent);}
+                UpdateTextMatches();
                 metadata.Text=$"{ByteSize.Format((ulong)data.Length)} · {encoding.SelectedItem} · {T("只读文本","read-only text")}";
             }
             catch(Exception ex){host.Children.Clear();host.Children.Add(Text(ex.Message));}
@@ -160,19 +170,22 @@ public sealed partial class MainWindow
             else{var ratio=zoom.SelectedIndex switch{1=>.25,2=>.5,3=>1,_=>2};image.MaxWidth=double.PositiveInfinity;image.MaxHeight=double.PositiveInfinity;image.Width=bitmap.PixelWidth*ratio;image.Height=bitmap.PixelHeight*ratio;image.Stretch=Stretch.Fill;}
         }
         previous.Click+=async(_,_)=>{if(current>0){current--;await LoadAsync();}};next.Click+=async(_,_)=>{if(current<candidates.Count-1){current++;await LoadAsync();}};
-        zoom.SelectionChanged+=(_,_)=>RenderZoom();encoding.SelectionChanged+=(_,_)=>{if(candidates[current].IsText)RenderText();};wrap.Toggled+=(_,_)=>{if(candidates[current].IsText)RenderText();};find.TextChanged+=(_,_)=>{if(candidates[current].IsText)RenderText();};
+        zoom.SelectionChanged+=(_,_)=>RenderZoom();encoding.SelectionChanged+=(_,_)=>{if(candidates[current].IsText)RenderText();};wrap.Toggled+=(_,_)=>UpdateTextWrapping();
+        var findComposing=false;find.TextCompositionStarted+=(_,_)=>findComposing=true;find.TextCompositionEnded+=(_,_)=>{findComposing=false;UpdateTextMatches();};find.TextChanged+=(_,_)=>{if(!findComposing)UpdateTextMatches();};
         async Task LoadAsync()
         {
+            if(closed.Task.IsCompleted)return;
             readCancellation?.Cancel();var tokenSource=new CancellationTokenSource();readCancellation=tokenSource;var token=tokenSource.Token;var version=++sequence;
             var entry=candidates[current];data=null;decoded=null;image=null;bitmap=null;
             headerTitle.Text=entry.Name;previewWindow.Title=entry.Name+" · New7z";previous.IsEnabled=current>0;next.IsEnabled=current<candidates.Count-1;position.Text=$"{current+1} / {candidates.Count}";
-            zoom.Visibility=entry.IsImage?Visibility.Visible:Visibility.Collapsed;encoding.Visibility=wrap.Visibility=find.Visibility=matches.Visibility=entry.IsText?Visibility.Visible:Visibility.Collapsed;find.Text="";
+            zoom.Visibility=entry.IsImage?Visibility.Visible:Visibility.Collapsed;encoding.Visibility=wrap.Visibility=wrapLabel.Visibility=find.Visibility=matches.Visibility=entry.IsText?Visibility.Visible:Visibility.Collapsed;find.Text="";matches.Text="";
             host.Children.Clear();host.Children.Add(new ProgressRing{IsActive=true,Width=36,Height=36});metadata.Text=T("正在读取所选条目…","Loading the selected entry…");
             try
             {
                 if(!entry.IsImage&&!entry.IsText)throw new NotSupportedException(T("暂不支持这种文件的内置预览。请先解压，再使用对应应用打开。","This file type cannot be previewed. Extract it and open it in its app."));
-                data=await engine.ReadAsync(currentArchive,entry,currentPassword,entry.IsText?2UL*1024*1024:32UL*1024*1024,token);
+                var loadedData=await engine.ReadAsync(currentArchive,entry,currentPassword,entry.IsText?2UL*1024*1024:32UL*1024*1024,token);
                 if(version!=sequence||token.IsCancellationRequested)return;
+                data=loadedData;
                 if(entry.IsText)RenderText();
                 else
                 {
@@ -186,7 +199,7 @@ public sealed partial class MainWindow
             catch(OperationCanceledException){}
             catch(Exception ex)
             {
-                if(version!=sequence)return;host.Children.Clear();var error=Stack(12);error.Padding=new Thickness(24);error.Children.Add(Text(T("无法预览这个文件","Cannot preview this file"),18,true));error.Children.Add(Text(ex.Message));
+                if(version!=sequence||token.IsCancellationRequested)return;host.Children.Clear();var error=Stack(12);error.Padding=new Thickness(24);error.Children.Add(Text(T("无法预览这个文件","Cannot preview this file"),18,true));error.Children.Add(Text(ex.Message));
                 if(ex is ArchivePasswordException)
                 {
                     var secret=new PasswordBox{Header=T("输入密码后重试","Enter the password to retry"),PasswordRevealMode=PasswordRevealMode.Peek};error.Children.Add(secret);error.Children.Add(Button(T("使用此密码重试","Retry with this password"),async(_,_)=>{currentPassword=secret.Password;password=currentPassword;await LoadAsync();}));
@@ -196,7 +209,14 @@ public sealed partial class MainWindow
             }
             finally{tokenSource.Dispose();if(ReferenceEquals(readCancellation,tokenSource))readCancellation=null;}
         }
-        try{await LoadAsync();await closed.Task;}finally{++sequence;readCancellation?.Cancel();previewOpen=false;previewWindowPointer=null;data=null;decoded=null;}
+        try
+        {
+            // Configure the first entry before showing the window, so controls do
+            // not appear briefly and then collapse on the first visible frame.
+            var initialLoad=LoadAsync();previewWindow.Activate();
+            await initialLoad;await closed.Task;
+        }
+        finally{++sequence;readCancellation?.Cancel();previewOpen=false;previewWindowPointer=null;data=null;decoded=null;}
     }
 
     private Window? previewWindowPointer;

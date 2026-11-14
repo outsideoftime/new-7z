@@ -6,6 +6,7 @@ namespace New7z.Core;
 [Flags]
 public enum ExplorerCommands
 {
+    // ExtractNamed is the persisted command bit for Smart Extract.
     None=0,Open=1,ExtractNamed=2,ExtractTo=4,ExtractHere=8,Test=16,
     Create=32,Create7z=64,CreateZip=128,CreateTar=256,All=511
 }

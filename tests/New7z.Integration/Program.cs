@@ -274,6 +274,7 @@ try
         Assert(extracted.Extracted==1&&new FileInfo(Path.Combine(output,"empty.txt")).Length==0,"batch commits zero-length file "+format);
     }
     using var cts=new CancellationTokenSource();cts.Cancel();try{await engine.ListAsync(limitArchive,cancellation:cts.Token);throw new Exception("Cancellation ignored");}catch(OperationCanceledException){checks.Add("cancel before start");}
+    await SmartExtractionTests.RunAsync(root,checks);
     await SafetyTests.RunAsync(root,checks);
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{passed=checks.Count,checks},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
     if(args.Contains("--keep")){Console.WriteLine("Fixtures: "+root);root="";}

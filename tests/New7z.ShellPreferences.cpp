@@ -64,10 +64,11 @@ int wmain(int argc,wchar_t** argv){
   writeLanguage(L"zh");
   check(visible(command,file)&&titlesAre(command,file,{L"新建压缩包…",L"压缩为 7Z",L"压缩为 ZIP",L"压缩为 TAR"}),"zh menu titles follow app language");
   check(tooltip(command)==L"使用 New7z 压缩或解压文件","zh menu tooltip follows app language");
+  check(visible(command,archive)&&titlesAre(command,archive,{L"用 New7z 打开",L"智能解压",L"解压到…",L"解压到当前文件夹",L"测试完整性"}),"zh archive menu exposes Smart Extract");
   writeLanguage(L"en");
-  check(titlesAre(command,file,{L"New archive…",L"Compress to 7Z",L"Compress to ZIP",L"Compress to TAR"}),"en menu titles follow app language");
+  check(visible(command,file)&&titlesAre(command,file,{L"New archive…",L"Compress to 7Z",L"Compress to ZIP",L"Compress to TAR"}),"en menu titles follow app language");
   check(tooltip(command)==L"Compress or extract files with New7z","en menu tooltip follows app language");
-  check(visible(command,archive)&&titlesAre(command,archive,{L"Open with New7z",L"Extract to named folder",L"Extract to…",L"Extract here",L"Test archive"}),"en archive menu titles follow app language");
+  check(visible(command,archive)&&titlesAre(command,archive,{L"Open with New7z",L"Smart Extract",L"Extract to…",L"Extract here",L"Test archive"}),"en archive menu titles follow app language");
   write(L"MenuEnabled",0);check(!visible(command,file)&&count(command)==0,"master switch hides menu");
   write(L"MenuEnabled",1);write(L"Commands",128);check(visible(command,file)&&count(command)==1,"file command filtering");
   check(!visible(command,archive)&&count(command)==0,"no relevant archive command hides root");

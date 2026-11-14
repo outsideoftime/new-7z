@@ -45,5 +45,28 @@ Set-Content -LiteralPath (Join-Path $alpha 'a.txt') -Value 'Folder A.' -Encoding
 Set-Content -LiteralPath (Join-Path $beta 'b.txt') -Value 'Folder B.' -Encoding utf8
 $multi=Join-Path $folders 'folders.zip'
 Send-Request 'create-zip' @($alpha,$beta) $multi
-[pscustomobject]@{Result='PASS';Checks='Multi-file ZIP creation, Unicode and spaces, common-parent archive naming for multiple folders, named-folder extraction, SHA-256 roundtrip, request consumption, standalone task windows';Windows=$windowChecks;FixtureFolder=$folder} | ConvertTo-Json -Depth 4 | Tee-Object -FilePath "$projectRoot/docs/shell-integration.json"
+function New-SmartFixture([string]$Name,[string[]]$Entries){
+ $path=Join-Path $folder ($Name+'.zip')
+ $zipFile=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
+ try{foreach($entryName in $Entries){
+  $entry=$zipFile.CreateEntry($entryName)
+  $writer=[IO.StreamWriter]::new($entry.Open())
+  try{$writer.Write($entryName)}finally{$writer.Dispose()}
+ }}finally{$zipFile.Dispose()}
+ return $path
+}
+$singleFolder=New-SmartFixture 'single-folder' @('项目/a.txt','项目/nested/b.txt')
+Send-Request 'extract-named' @($singleFolder) (Join-Path $folder '项目/nested/b.txt')
+if(Test-Path -LiteralPath (Join-Path $folder 'single-folder')){throw 'Smart extraction added an unnecessary wrapper around a single folder.'}
+$singleFile=New-SmartFixture 'single-file' @('loose.txt')
+Send-Request 'extract-named' @($singleFile) (Join-Path $folder 'loose.txt')
+if(Test-Path -LiteralPath (Join-Path $folder 'single-file')){throw 'Smart extraction added an unnecessary wrapper around a single file.'}
+Send-Request 'extract-named' @($singleFile) (Join-Path $folder 'loose (2).txt')
+if((Get-Content -LiteralPath (Join-Path $folder 'loose.txt') -Raw) -ne 'loose.txt'){throw 'Smart extraction replaced an existing file.'}
+$batchFolder=New-SmartFixture 'batch-folder' @('Batch/child.txt')
+$batchFiles=New-SmartFixture 'batch-files' @('first.txt','second.txt')
+Send-Request 'extract-named' @($batchFolder,$batchFiles) (Join-Path $folder 'batch-files/second.txt')
+if(!(Test-Path -LiteralPath (Join-Path $folder 'Batch/child.txt')) -or (Test-Path -LiteralPath (Join-Path $folder 'batch-folder'))){throw 'Batch Smart Extract did not resolve each archive separately.'}
+if((Test-Path -LiteralPath (Join-Path $folder 'first.txt')) -or (Test-Path -LiteralPath (Join-Path $folder 'second.txt'))){throw 'Smart extraction scattered a multi-item archive into the current folder.'}
+[pscustomobject]@{Result='PASS';Checks='Multi-file ZIP creation, Unicode and spaces, common-parent archive naming for multiple folders, Smart Extract single folder/file/multiple items/mixed batch, collision keeps both, SHA-256 roundtrip, request consumption, standalone task windows';Windows=$windowChecks;FixtureFolder=$folder} | ConvertTo-Json -Depth 4 | Tee-Object -FilePath "$projectRoot/docs/shell-integration.json"
 }finally{foreach($process in $taskProcesses){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id -ErrorAction SilentlyContinue}}}

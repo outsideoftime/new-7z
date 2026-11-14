@@ -45,7 +45,7 @@ public sealed partial class MainWindow
         var commands=Stack(6);section.Children.Add(commands);
         var choices=new List<(ExplorerCommands Flag,CheckBox Box)>();
         foreach(var (flag,label) in new[]{
-            (ExplorerCommands.Open,T("用 New7z 打开","Open with New7z")),(ExplorerCommands.ExtractNamed,T("解压到同名文件夹 / 分别解压","Extract to a folder with the same name / each")),
+            (ExplorerCommands.Open,T("用 New7z 打开","Open with New7z")),(ExplorerCommands.ExtractNamed,T("智能解压","Smart Extract")),
             (ExplorerCommands.ExtractTo,T("解压到…","Extract to…")),(ExplorerCommands.ExtractHere,T("解压到当前文件夹","Extract here")),(ExplorerCommands.Test,T("测试完整性","Test archive")),
             (ExplorerCommands.Create,T("新建压缩包…","New archive…")),(ExplorerCommands.Create7z,T("压缩为 7Z","Compress to 7Z")),(ExplorerCommands.CreateZip,T("压缩为 ZIP","Compress to ZIP")),(ExplorerCommands.CreateTar,T("压缩为 TAR","Compress to TAR"))})
         {

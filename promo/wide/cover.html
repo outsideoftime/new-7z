@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<title>New7z 横屏封面</title>
+<style>
+  :root{--zh:"Microsoft YaHei UI","Microsoft YaHei",sans-serif;--display:"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif;--mono:"Bahnschrift","Consolas",monospace}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{overflow:hidden;background:#04060b}
+  body{font-family:var(--zh);-webkit-font-smoothing:antialiased}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;
+    background:
+      radial-gradient(1200px 800px at 8% 0%,rgba(30,84,230,.38),transparent 62%),
+      radial-gradient(1000px 700px at 96% 30%,rgba(0,176,255,.16),transparent 66%),
+      radial-gradient(1200px 700px at 50% 108%,rgba(24,64,190,.26),transparent 70%),
+      linear-gradient(180deg,#04070e,#050810 48%,#03060d)}
+  .grid{position:absolute;inset:0;
+    background-image:linear-gradient(rgba(150,190,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(150,190,255,.06) 1px,transparent 1px);
+    background-size:90px 90px;
+    mask-image:radial-gradient(ellipse at 50% 44%,#000 22%,transparent 76%);
+    -webkit-mask-image:radial-gradient(ellipse at 50% 44%,#000 22%,transparent 76%)}
+  .grain{position:absolute;inset:0;opacity:.4;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.42'/></svg>")}
+  .vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 46%,transparent 44%,rgba(0,0,0,.38) 82%,rgba(0,0,0,.76) 100%)}
+  .hud{position:absolute;left:96px;right:96px;top:70px;display:flex;align-items:center;gap:16px}
+  .hud img{width:40px;height:40px;border-radius:11px;box-shadow:0 0 24px rgba(47,125,255,.6)}
+  .hud b{font-family:var(--display);font-size:19px;font-weight:600;letter-spacing:.42em;color:rgba(224,238,255,.85)}
+  .hud em{margin-left:auto;font-family:var(--mono);font-size:16px;letter-spacing:.24em;color:rgba(190,214,255,.45);font-style:normal}
+  .rule{position:absolute;left:96px;right:96px;top:128px;height:1px;background:rgba(160,200,255,.16)}
+  .text{position:absolute;left:112px;top:270px;width:1000px}
+  .kicker{font-family:var(--display);font-size:22px;letter-spacing:.5em;color:rgba(180,210,255,.62);margin-bottom:36px}
+  h1 .l1{display:block;font-size:86px;font-weight:300;letter-spacing:.02em;color:rgba(240,246,255,.92);line-height:1.2}
+  h1 b{display:block;font-size:150px;font-weight:800;letter-spacing:.01em;line-height:1.14;
+    background:linear-gradient(100deg,#ffffff 6%,#d6e9ff 38%,#8fc4ff 62%,#4f9dff 92%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 10px 46px rgba(47,125,255,.38))}
+  .tag{margin-top:40px;font-size:36px;font-weight:300;letter-spacing:.16em;color:rgba(226,239,255,.88)}
+  .pills{margin-top:46px;display:flex;gap:18px}
+  .pills span{padding:14px 28px;border-radius:100px;border:1px solid rgba(160,205,255,.26);background:rgba(120,170,255,.07);
+    font-family:var(--mono);font-size:21px;letter-spacing:.1em;color:rgba(200,225,255,.8)}
+  .shot{position:absolute;left:1060px;top:214px;width:900px;border-radius:20px;overflow:hidden;
+    box-shadow:0 60px 130px rgba(0,10,50,.8),0 0 0 1px rgba(170,210,255,.2),0 0 100px rgba(47,125,255,.3);
+    transform:perspective(2200px) rotateY(-8deg) rotateX(3deg);transform-origin:left center}
+  .shot img{width:100%;display:block}
+  .mark{position:absolute;left:112px;top:820px;display:flex;align-items:center;gap:24px}
+  .mark img{width:92px;height:92px;border-radius:24px;box-shadow:0 16px 42px rgba(0,40,140,.6),0 0 54px rgba(47,125,255,.4)}
+  .mark .name span{display:block;font-family:var(--display);font-size:54px;font-weight:700;letter-spacing:.02em;
+    background:linear-gradient(180deg,#fff,#c8ddff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .mark .name em{display:block;margin-top:4px;font-style:normal;font-size:21px;font-weight:300;letter-spacing:.42em;color:rgba(200,222,255,.66)}
+  .url{position:absolute;left:112px;bottom:74px;font-family:var(--mono);font-size:22px;letter-spacing:.1em;color:rgba(190,218,255,.7)}
+  .ver{position:absolute;right:112px;bottom:74px;font-family:var(--mono);font-size:19px;letter-spacing:.2em;color:rgba(160,195,245,.5)}
+  [data-lang="en"] body{font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif}
+  [data-lang="en"] h1 .l1{font-size:70px}
+  [data-lang="en"] h1 b{font-size:92px}
+  [data-lang="en"] .tag{margin-top:30px;font-size:30px;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="grid"></div>
+  <div class="hud"><img src="../assets/logo.png" alt=""><b>NEW7Z</b><em>WIN 11 · X64</em></div>
+  <div class="rule"></div>
+  <div class="text">
+    <div class="kicker" id="c-kicker">NEW7Z · 新 7z · 1.0.2</div>
+    <h1><span class="l1" id="c-l1">一个压缩软件</span><b id="c-l2">能有多讲究？</b></h1>
+    <div class="tag" id="c-tag">简单 · 实用 · 按你的习惯</div>
+    <div class="pills" id="c-pills">
+      <span>23 MB</span><span>WINUI 3</span><span>7-ZIP 引擎</span><span>MIT</span>
+    </div>
+  </div>
+  <div class="shot"><img src="../assets/ui-home-dark.png" alt="New7z 主界面"></div>
+  <div class="mark">
+    <img src="../assets/logo.png" alt="New7z">
+    <div class="name"><span>New7z</span><em>新 7z</em></div>
+  </div>
+  <div class="url">github.com/outsideoftime/new-7z</div>
+  <div class="ver">v1.0.2 · MIT</div>
+  <div class="grain"></div>
+  <div class="vig"></div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const w = Number(q.get("w")) || 1920, h = Number(q.get("h")) || 1080;
+  document.body.style.width = w + "px";
+  document.body.style.height = h + "px";
+  document.getElementById("stage").style.transform = `scale(${Math.min(w / 1920, h / 1080)})`;
+  if (q.get("lang") === "en") {
+    document.documentElement.setAttribute("data-lang", "en");
+    document.documentElement.lang = "en";
+    document.getElementById("c-kicker").textContent = "NEW7Z · WINDOWS 11 · 1.0.2";
+    document.getElementById("c-l1").textContent = "A file archiver";
+    document.getElementById("c-l2").textContent = "can be this simple?";
+    document.getElementById("c-tag").textContent = "Simple · Practical · Yours";
+    document.getElementById("c-pills").innerHTML = "<span>23 MB</span><span>WINUI 3</span><span>7-ZIP ENGINE</span><span>MIT</span>";
+  }
+</script>
+</body>
+</html>

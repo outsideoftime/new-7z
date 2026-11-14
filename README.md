@@ -2,13 +2,13 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前正式版：**1.0.2**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前正式版：**1.0.3**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
 ## 使用
 
-下载安装 EXE，按向导安装到当前用户目录。安装包约 **23.36 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。详细操作见 [操作说明](docs/操作说明.md)。
+下载安装 EXE，按向导安装到当前用户目录。安装包约 **23.63 MiB**，包含 .NET、WinUI 和自编译 7-Zip 引擎，可离线运行，无需安装完整 7-Zip。当前发行文件尚未进行发布者代码签名。详细操作见 [操作说明](docs/操作说明.md)。
 
 - 创建 7z、ZIP、TAR，7z/ZIP 支持密码与 7z 文件名加密；读取、解压和校验引擎支持的归档。设置中可选择默认格式，并分别指定 7z/ZIP 的默认压缩方法。
 - 压缩包内直接预览图片和文本/代码文件，常见源码、配置、脚本扩展名（.cs、.py、.rs、.toml、Makefile 等）都可当作文本查看；支持中文文件名、文件夹、多选解压。
@@ -25,7 +25,7 @@
 
 解压采用一次打开归档、批量输出，避免多文件包反复解析和固实块重复解码；保留路径预检、逐文件校验提交、冲突处理和取消清理。详见 [解压性能记录](docs/解压性能优化.md)。
 
-本地开发分支已加入独立引擎进程、MotW 传播和解压预算、文件列表排序/属性、Zstandard/LZ4 单文件流、42 种文件图标与列表/任务刷新优化，尚未发布。4 GiB 以上 ZIP64 与 50,000 文件 ZIP/7z 压力样本已通过；正式签名仍待证书。实现与验证边界见 [稳定性与安全加固](docs/稳定性与安全加固.md)。
+本地开发分支已加入独立引擎进程、MotW 传播和解压预算、文件列表排序/属性、Zstandard/LZ4 单文件流、42 种文件图标与列表/任务刷新优化，均已随 1.0.2 发布。1.0.3 起右键「智能解压」替代「解压到同名文件夹」：包内只有一个顶层文件或文件夹时直接解压到当前目录，有多个顶层项目时解压到同名文件夹，多选时逐包判断；文件冲突默认保留两者，源包保留。4 GiB 以上 ZIP64 与 50,000 文件 ZIP/7z 压力样本已通过；正式签名仍待证书。实现与验证边界见 [稳定性与安全加固](docs/稳定性与安全加固.md)。
 
 ## 文件图标
 

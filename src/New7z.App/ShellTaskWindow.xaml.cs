@@ -109,7 +109,7 @@ public sealed partial class ShellTaskWindow:Window
         if(startupError!=null){ShowFailure(startupError);return;}
         if(request==null){ShowFailure(T("没有可执行的任务。","There is no task to run."));return;}
         var action=request.Action;
-        Heading.Text=action.StartsWith("create")?T("压缩文件","Create Archive"):action=="test"?T("测试完整性","Test Integrity"):T("解压文件","Extract Files");
+        Heading.Text=action.StartsWith("create")?T("压缩文件","Create Archive"):action=="test"?T("测试完整性","Test Integrity"):action=="extract-named"?T("智能解压","Smart Extract"):T("解压文件","Extract Files");
         Title="New7z · "+Heading.Text;
         SourceText.Text=action=="extract-entries"?T($"{System.IO.Path.GetFileName(request.Paths[0])} · {request.Entries?.Length??0} 项",$"{System.IO.Path.GetFileName(request.Paths[0])} · {request.Entries?.Length??0} items"):request.Paths.Length==1?System.IO.Path.GetFileName(request.Paths[0]):T($"已选择 {request.Paths.Length} 个项目",$"Selected {request.Paths.Length} items");
         ToolTipService.SetToolTip(SourceText,string.Join(Environment.NewLine,request.Paths.Take(20)));
@@ -192,7 +192,7 @@ public sealed partial class ShellTaskWindow:Window
             var target=request.Action=="extract-here"?parent:System.IO.Path.Combine(parent,ShellPaths.ArchiveStem(source));
             return request.Paths.Length>1?ShellPaths.UniqueOutput(target,reserved):target;
         }).ToArray();
-        destination=request.Action=="test"?System.IO.Path.GetDirectoryName(request.Paths[0]):request.Action=="extract-to"&&request.Paths.Length>1?output!.Text:targets[0];
+        destination=request.Action is "test" or "extract-named"?System.IO.Path.GetDirectoryName(request.Paths[0]):request.Action=="extract-to"&&request.Paths.Length>1?output!.Text:targets[0];
     }
     private async Task RunAsync()
     {
@@ -275,7 +275,13 @@ public sealed partial class ShellTaskWindow:Window
                         var roots=new HashSet<string>(wanted,StringComparer.Ordinal);
                         entries=entries.Where(e=>roots.Contains(e.NormalizedPath)||roots.Any(r=>e.NormalizedPath.StartsWith(r+"/",StringComparison.Ordinal))).ToList();
                     }
-                    await engine.ExtractAsync(source,entries,target,(ConflictPolicy)(conflict?.SelectedIndex??0),key,progress,cancellation.Token);
+                    var actualTarget=request.Action=="extract-named"?SmartExtraction.GetDestination(System.IO.Path.GetDirectoryName(source)!,target,entries):target;
+                    if(request.Action=="extract-named"&&request.Paths.Length==1)
+                    {
+                        destination=actualTarget;DestinationText.Text=T("保存到：","Save to: ")+destination;
+                        PersistSharedTask(StatusText.Text);
+                    }
+                    await engine.ExtractAsync(source,entries,actualTarget,(ConflictPolicy)(conflict?.SelectedIndex??0),key,progress,cancellation.Token);
                 }
                 return;
             }

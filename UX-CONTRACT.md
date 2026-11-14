@@ -40,6 +40,7 @@
 | Context Menu | context-menu.js / context-menu-app.js | docs/右键菜单设计.md | 应用内条目/多选/空白原型；Shell 场景设计 | context-menu-check.cjs |
 | Explorer Context Menu | native/New7z.Shell.cpp / ShellRequest.cs | docs/右键菜单设计.md | 系统 New7z 子菜单；归档/普通文件/文件夹/多选 | test-shell.ps1 / docs/Explorer右键验收.md |
 | Shell Task | ShellTaskWindow / ArchiveEngine | 本文件 | 独立快捷任务窗口；原生输入/下拉/密码/进度/结果 | test-shell.ps1 / 原生窗口检查 |
+| Smart Extract | SmartExtraction / ShellTaskWindow.ProcessArchiveAsync | 当前用户要求 / 本文件 | 替换原同名文件夹命令；单个顶层项目输出到源包目录，多个顶层项目或空包用同名目录；逐包判断 | SmartExtractionTests / test-shell.ps1 / test-shell-preferences.ps1 |
 | Windows Icon | WindowAppearance / build-icons.ps1 | DESIGN.md | 主程序/小窗口/EXE/Explorer 菜单 | test-icons.ps1 |
 | Explorer Settings | MainWindow.Settings / ExplorerPreferencesStore | 本文件 | ToggleSwitch 总开关/CheckBox 命令/ComboBox 关闭方式 | test-shell-preferences.ps1 / test-popup-close.ps1 / Core integration |
 | Windows Compression Menu Setting | MainWindow.Settings / WindowsCompressMenuSettingsStore | 本文件 | 当前用户、Windows 11 24H2+「压缩到」菜单开关；保存前备份、恢复原注册表值 | test.ps1 隔离注册表键 15 项 + 安装脚本恢复 7 项；真实 Explorer 菜单待验收 |
@@ -92,6 +93,8 @@ Date 不适用：只读示例日期，无日期输入控件。引擎 API、登�
 原型右键菜单使用 native popover 非模态 top layer 和共享键盘行为；命令执行前关闭。单项右键更新选择，多选内右键保留集合，空白清空；排序和复制按当前可见行顺序。Shift+F10、菜单键和可见「更多」是等效入口。Escape 恢复触发控件，外部点击关闭不抢焦点；滚动/resize 关闭。只接管归档列表，文本输入仍保留浏览器文字菜单。HTML 场景页不执行磁盘或注册表操作；实际 Explorer 扩展由系统绘制菜单，并通过受控 JSON 请求触发真实任务，默认冲突保留两者。
 
 ## Async and resilience
+
+2026-11-14 智能解压：沿用 `extract-named` 请求与 `ExtractNamed=2` 持久化设置位。归档列表读取成功且完成密码询问后，`SmartExtraction` 按 Windows 不区分大小写的顶层名称判断结构，包含没有显式目录条目的隐式文件夹；只有一个顶层项目时输出到源包目录，多个顶层项目或空包输出到预分配的同名目录，保留全部包内路径。批量逐包判断，多顶层包继续使用原有唯一目录分配；同名文件自动改名，源包不删除，安全预检与取消逻辑复用引擎。单包确定输出目录后更新任务路径与「打开文件夹」目标；批量结果打开首个源包所在目录。「解压到…」「解压到当前文件夹」与主窗口手动选目录流程维持各自规则。
 
 原生 Explorer 任务变体：启动分流在任何主窗口创建之前完成。设置→执行→完成/失败/取消由同一无系统标题栏小窗口承载，默认手动关闭，提供打开文件夹与关闭；Escape 与底部关闭等效。配置窗口按表单内容调整高度，底部操作栏保持固定；内容超出工作区时内部滚动。可在设置中选择成功后自动关闭，任务完成时读取当前策略；失败、取消、设置读取异常时保留结果。执行中要求确认取消，等待回调停止后才允许退出；错误保留原因，重试快捷打包重新选择唯一输出名，配置任务返回原输入表单。批量解压按包串行，分配输出名时预留目录名避免同批重名，密码分别询问且不缓存到其他包。小窗口使用原生 ComboBox、PasswordBox、ContentDialog、InfoBar，与主程序保持主题与冲突默认值一致。
 

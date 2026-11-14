@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>New7z · 横屏宣传片</title>
+<link rel="stylesheet" href="wide.css">
+</head>
+<body>
+<div id="stage">
+
+  <div id="bg">
+    <div class="aurora a1"></div>
+    <div class="aurora a2"></div>
+    <div class="aurora a3"></div>
+    <div class="beam b1"></div>
+    <div class="beam b2"></div>
+  </div>
+  <div id="grid"></div>
+  <div id="rings"><svg viewBox="0 0 1000 1000" aria-hidden="true">
+    <circle cx="500" cy="500" r="470" class="ring r1"/>
+    <circle cx="500" cy="500" r="360" class="ring r2"/>
+    <circle cx="500" cy="500" r="250" class="ring r3"/>
+  </svg></div>
+
+  <div id="hud">
+    <div class="hud-brand"><img src="../assets/logo.png" alt=""><span>NEW7Z</span></div>
+    <div class="hud-right">WIN 11 · X64</div>
+    <div class="hud-rule"><i id="hud-progress"></i></div>
+    <div class="hud-chapter"><span id="chapter-index">01</span><em>/</em><span id="chapter-name">HOOK</span></div>
+  </div>
+
+  <!-- 01 HOOK -->
+  <section class="scene" id="s1">
+    <div class="kicker" id="s1-kicker">NEW7Z · 新 7z</div>
+    <h1 class="line line-a" id="s1-l1"><span data-i18n="hook.l1">一个压缩软件</span></h1>
+    <h1 class="line line-b" id="s1-l2"><span data-i18n="hook.l2">能有多讲究？</span></h1>
+    <div class="hairline" id="s1-rule"></div>
+    <div class="micro" id="s1-micro" data-i18n="hook.micro">简单 · 实用 · 按你的习惯</div>
+  </section>
+
+  <!-- 02 BRAND -->
+  <section class="scene" id="s2">
+    <div class="brand-ring" id="s2-ring"><svg viewBox="0 0 800 800" aria-hidden="true">
+      <circle cx="400" cy="400" r="360" class="dash"/>
+      <circle cx="400" cy="400" r="300" class="dash thin"/>
+    </svg></div>
+    <div class="logo-halo" id="s2-halo"></div>
+    <div class="logo-wrap" id="s2-logo">
+      <img src="../assets/logo.png" alt="New7z">
+      <div class="logo-sheen" id="s2-sheen"></div>
+    </div>
+    <div class="wordmark" id="s2-word"><span>New7z</span></div>
+    <div class="wordmark-cn" id="s2-cn"><span>新 7z</span></div>
+    <div class="tagline" id="s2-tag" data-i18n="brand.tag">为 Windows 11 而生</div>
+    <div class="micro tag-micro" id="s2-micro" data-i18n="brand.micro">WINUI 3 · 完整 7-Zip 引擎 · 23 MB</div>
+  </section>
+
+  <!-- 03 SIMPLE -->
+  <section class="scene" id="s3">
+    <div class="head-l" id="s3-head">
+      <div class="eyebrow">SIMPLE</div>
+      <h2 data-i18n="s3.title">打开，就能用</h2>
+      <p data-i18n="s3.sub">打开、新建、拖进来。没有向导，也没有广告。</p>
+    </div>
+    <div class="feature-list" id="s3-features">
+      <div class="feature" data-i="0">
+        <b>01</b>
+        <div><span data-i18n="s3.f1">打开压缩包</span><em data-i18n="s3.f1d">双击、拖放，或者右键打开</em></div>
+      </div>
+      <div class="feature" data-i="1">
+        <b>02</b>
+        <div><span data-i18n="s3.f2">新建压缩</span><em data-i18n="s3.f2d">7z / ZIP / TAR，两步完成</em></div>
+      </div>
+      <div class="feature" data-i="2">
+        <b>03</b>
+        <div><span data-i18n="s3.f3">拖进窗口</span><em data-i18n="s3.f3d">自动识别文件还是压缩包</em></div>
+      </div>
+    </div>
+    <div class="shot-stage" id="s3-stage">
+      <div class="glow-pool" id="s3-pool"></div>
+      <div class="window shot" id="s3-win">
+        <img src="../assets/ui-home-dark.png" alt="New7z 主页">
+        <div class="window-rim"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 EXTRACT -->
+  <section class="scene" id="s4">
+    <div class="head-l" id="s4-head">
+      <div class="eyebrow">EXTRACT</div>
+      <h2 data-i18n="s4.title">右键，就是一整套</h2>
+      <p data-i18n="s4.sub">解压到此处、解压到…、压缩、测试完整性，都在资源管理器里完成。</p>
+    </div>
+    <div class="menu-stage" id="s4-stage">
+      <div class="menu-card" id="s4-menu">
+        <div class="menu-head"><img src="../assets/logo.png" alt=""><span>New7z</span><em>›</em></div>
+        <div class="menu-item" data-i="0"><span data-i18n="menu.open">用 New7z 打开</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-item" data-i="1"><span data-i18n="menu.extractTo">解压到“项目素材\”</span></div>
+        <div class="menu-item" data-i="2"><span data-i18n="menu.extractDots">解压到…</span></div>
+        <div class="menu-item" data-i="3"><span data-i18n="menu.extractHere">解压到当前文件夹</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-item" data-i="4"><span data-i18n="menu.test">测试完整性</span></div>
+      </div>
+      <svg class="cursor" id="s4-cursor" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M6 3 L6 25 L12.6 19 L16.6 27.4 L20.2 25.8 L16.2 17.5 L24.5 17.4 Z"/>
+      </svg>
+      <div class="batch-pill" id="s4-batch">
+        <i class="dot"></i><span data-i18n="s4.batch">多选批量解压 · 一次完成</span>
+      </div>
+    </div>
+    <div class="menu-note" id="s4-note" data-i18n="s4.note">资源管理器 · New7z 菜单</div>
+  </section>
+
+  <!-- 05 PREVIEW -->
+  <section class="scene" id="s5">
+    <div class="head-l" id="s5-head">
+      <div class="eyebrow">PREVIEW</div>
+      <h2 data-i18n="s5.title">不解压，先看一眼</h2>
+      <p data-i18n="s5.sub">图片、文本、源码，在压缩包里直接预览。</p>
+    </div>
+    <div class="preview-stage light" id="s5-stage">
+      <div class="window shot soft" id="s5-win">
+        <img src="../assets/ui-browse-light.png" alt="New7z 压缩包浏览">
+        <div class="window-rim"></div>
+      </div>
+      <div class="preview-card" id="s5-card">
+        <div class="pc-bar"><span class="pc-dots"><i></i><i></i><i></i></span><span class="pc-name">MainWindow.Preview.cs</span></div>
+        <div class="pc-body code">
+          <pre><code><span class="ln"></span><span class="kw">using</span> New7z.Core;
+<span class="ln"></span>
+<span class="ln"></span><span class="kw">namespace</span> New7z.App;
+<span class="ln"></span>
+<span class="ln"></span><span class="kw">public sealed partial class</span> <span class="ty">MainWindow</span>
+<span class="ln"></span>{
+<span class="ln"></span>    <span class="kw">private bool</span> previewOpen;
+<span class="ln"></span>
+<span class="ln"></span>    <span class="cm">// 预览是独立窗口</span>
+<span class="ln"></span>    <span class="kw">void</span> <span class="fn">PreviewDrag</span>(PointerRoutedEventArgs e)
+<span class="ln"></span>    {
+<span class="ln"></span>        <span class="kw">if</span> (previewWindow == <span class="kw">null</span>) <span class="kw">return</span>;
+<span class="ln"></span>        <span class="kw">var</span> p = e.<span class="fn">GetCurrentPoint</span>(sender);
+<span class="ln"></span>        <span class="kw">if</span> (!p.Properties.IsLeftButtonPressed)
+<span class="ln"></span>            <span class="kw">return</span>;
+<span class="ln"></span>        window.<span class="fn">CapturePointer</span>(p.Pointer);
+<span class="ln"></span>    }
+<span class="ln"></span>}</code></pre>
+        </div>
+        <div class="pc-foot"><span data-i18n="s5.foot">压缩包内 · 只读 · 源码预览</span><span class="pc-zoom">C#</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 FORMATS -->
+  <section class="scene" id="s6">
+    <div class="head-c" id="s6-head">
+      <div class="eyebrow">FORMATS</div>
+      <h2 data-i18n="s6.title">常见格式，一个入口</h2>
+    </div>
+    <div class="format-grid" id="s6-grid"></div>
+    <div class="format-line" id="s6-line">7z · ZIP · RAR · TAR · GZ · XZ · BZ2 · ISO</div>
+    <div class="format-note" id="s6-note" data-i18n="s6.note">创建 7z / ZIP / TAR · 读取和解压其余格式</div>
+    <div class="extra-pills" id="s6-pills">
+      <span class="extra-pill" data-i18n="s6.extra1">另支持 ZST / LZ4 单文件流</span>
+    </div>
+  </section>
+
+  <!-- 07 FILE ICONS -->
+  <section class="scene" id="sf">
+    <div class="head-l" id="sf-head">
+      <div class="eyebrow">FILE ICONS</div>
+      <h2 data-i18n="sf.title">文件图标，一眼认出</h2>
+      <p data-i18n="sf.sub">压缩包列表里，42 种文件类型自动显示对应图标。</p>
+    </div>
+    <div class="file-card" id="sf-list">
+      <div class="fc-head"><img src="../assets/logo.png" alt=""><span>项目资料.7z</span><em>4 个文件夹 · 38 个文件</em></div>
+      <div class="fl-row" data-i="0"><img src="../assets/filetypes/powerpoint.png" alt=""><span>季度汇报.pptx</span><em>PPTX</em><b>8.2 MB</b><i>10:24</i></div>
+      <div class="fl-row" data-i="1"><img src="../assets/filetypes/csharp.png" alt=""><span>MainWindow.cs</span><em>CS</em><b>41 KB</b><i>10:21</i></div>
+      <div class="fl-row" data-i="2"><img src="../assets/filetypes/json.png" alt=""><span>settings.json</span><em>JSON</em><b>3 KB</b><i>10:18</i></div>
+      <div class="fl-row" data-i="3"><img src="../assets/filetypes/pdf.png" alt=""><span>使用说明.pdf</span><em>PDF</em><b>1.6 MB</b><i>09:57</i></div>
+      <div class="fl-row" data-i="4"><img src="../assets/filetypes/video.png" alt=""><span>演示录屏.mp4</span><em>MP4</em><b>36 MB</b><i>09:52</i></div>
+      <div class="fl-row" data-i="5"><img src="../assets/filetypes/blender.png" alt=""><span>封面模型.blend</span><em>BLEND</em><b>12 MB</b><i>09:48</i></div>
+    </div>
+    <div class="type-grid" id="sf-grid"></div>
+    <div class="type-caption" id="sf-caption" data-i18n="sf.caption">42 种类型 · 按扩展名识别</div>
+  </section>
+
+  <!-- 08 PERSONAL -->
+  <section class="scene" id="s7">
+    <div class="head-l" id="s7-head">
+      <div class="eyebrow">YOURS</div>
+      <h2 data-i18n="s7.title">剩下的，按你的习惯来</h2>
+      <p data-i18n="s7.sub">设置分类清楚，改的都是你常用的地方。</p>
+    </div>
+    <div class="icon-mini" id="s7-icons">
+      <div class="mini-card" data-i="0"><div class="flip"><div class="face front"><img src="../assets/logo.png" alt=""></div><div class="face back"><img src="../assets/logo.png" alt=""></div></div><span data-i18n="s7.iconBrand">品牌图标</span></div>
+      <div class="mini-card" data-i="1"><div class="flip"><div class="face front"><img src="../assets/formats/7z.png" alt=""></div><div class="face back"><img src="../assets/formats/7z.png" alt=""></div></div><span>7Z</span></div>
+      <div class="mini-card" data-i="2"><div class="flip"><div class="face front"><img src="../assets/formats/zip.png" alt=""></div><div class="face back"><img src="../assets/formats/zip.png" alt=""></div></div><span>ZIP</span></div>
+    </div>
+    <div class="icon-caption" id="s7-iconnote" data-i18n="s7.iconnote">自定义图标：换成你的 PNG</div>
+    <div class="settings-panel" id="s7-panel">
+      <div class="sp-head"><span data-i18n="s7.panelTitle">设置</span><em id="s7-theme" data-i18n="s7.theme">深色</em></div>
+      <div class="sp-row" data-i="0">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/></svg>
+        <span data-i18n="s7.r1">常规</span><em>›</em>
+      </div>
+      <div class="sp-row" data-i="1">
+        <svg viewBox="0 0 24 24"><rect x="3.2" y="6.4" width="17.6" height="13.2" rx="2"/><path d="M3.2 10.6h17.6M8 6.4V3.6M16 6.4V3.6"/></svg>
+        <span data-i18n="s7.r2">压缩</span><em>›</em>
+      </div>
+      <div class="sp-row" data-i="2">
+        <svg viewBox="0 0 24 24"><path d="M4 6.4h16M4 12h16M4 17.6h9"/></svg>
+        <span data-i18n="s7.r3">右键菜单</span><em>›</em>
+      </div>
+      <div class="sp-row active" data-i="3">
+        <svg viewBox="0 0 24 24"><path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1.6 0 2.2-1 2.2-2.1 0-1.4-1-1.7-1-2.8 0-.9.7-1.5 1.7-1.5h1.9c2.2 0 3.8-1.6 3.8-3.7 0-4.2-3.9-7.5-8.6-7.5Z"/><circle cx="7.6" cy="10" r="1.1"/><circle cx="11" cy="7.2" r="1.1"/><circle cx="15.4" cy="8.4" r="1.1"/></svg>
+        <span data-i18n="s7.r4">外观与图标</span><em>›</em>
+      </div>
+      <div class="sp-row" data-i="4">
+        <svg viewBox="0 0 24 24"><path d="M10.2 13.8a3.6 3.6 0 0 0 5.1 0l3-3a3.6 3.6 0 1 0-5.1-5.1l-1.5 1.5"/><path d="M13.8 10.2a3.6 3.6 0 0 0-5.1 0l-3 3a3.6 3.6 0 1 0 5.1 5.1l1.5-1.5"/></svg>
+        <span data-i18n="s7.r5">文件关联</span><em>›</em>
+      </div>
+      <div class="sp-row" data-i="5">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11v5.4M12 7.8v.2"/></svg>
+        <span data-i18n="s7.r6">关于</span><em>›</em>
+      </div>
+    </div>
+    <div class="theme-pills" id="s7-pills">
+      <span class="tpill" data-i18n="s7.pill1">深色 / 浅色</span>
+      <span class="tpill" data-i18n="s7.pill2">中文 / English</span>
+    </div>
+  </section>
+
+  <!-- 08 SAFE -->
+  <section class="scene" id="s8">
+    <div class="head-c" id="s8-head">
+      <div class="eyebrow">SAFE</div>
+      <h2 data-i18n="s8.title">简单，也要安全</h2>
+      <p data-i18n="s8.sub">本地运行，解压之前先检查。</p>
+    </div>
+    <div class="safe-cards" id="s8-cards">
+      <div class="safe-card" data-i="0">
+        <svg viewBox="0 0 24 24"><path d="M6.5 18.5 3.8 21M17.5 18.5l2.7 2.5M12 3.5a6 6 0 0 1 6 6c0 2.4-1.3 4.2-3 5.4v2.6H9v-2.6c-1.7-1.2-3-3-3-5.4a6 6 0 0 1 6-6Z"/><path d="M9.5 8.5h5"/></svg>
+        <b data-i18n="s8.c1">完全离线</b>
+        <span data-i18n="s8.c1d">除了检查更新，不访问网络</span>
+      </div>
+      <div class="safe-card" data-i="1">
+        <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5.2c0 4.4 2.9 7.8 7 9.8 4.1-2 7-5.4 7-9.8V6l-7-3Z"/><path d="m9.2 12.1 1.9 1.9 3.8-3.9"/></svg>
+        <b data-i18n="s8.c2">无需管理员</b>
+        <span data-i18n="s8.c2d">当前用户安装，卸载干净</span>
+      </div>
+      <div class="safe-card" data-i="2">
+        <svg viewBox="0 0 24 24"><path d="M5 4.2h9l5 5v10.6H5z"/><path d="M14 4.2v5h5M8.4 13.6l1.7 1.7 3.3-3.4"/></svg>
+        <b data-i18n="s8.c3">解压前预检</b>
+        <span data-i18n="s8.c3d">路径、链接与大小上限先检查</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 09 SPECS -->
+  <section class="scene" id="s9">
+    <div class="head-l" id="s9-head">
+      <div class="eyebrow">SPECS</div>
+      <h2 data-i18n="s9.title">小，但完整</h2>
+      <p data-i18n="s9.sub">一个安装包，不需要额外的运行库。</p>
+    </div>
+    <div class="spec-list" id="s9-list">
+      <div class="spec-row" data-i="0"><b>23<small>MB</small></b><span data-i18n="s9.r1">安装包 · 含完整 7-Zip 引擎</span></div>
+      <div class="spec-row" data-i="1"><b>0</b><span data-i18n="s9.r2">额外运行库 · 完全离线可用</span></div>
+      <div class="spec-row" data-i="2"><b>0</b><span data-i18n="s9.r3">管理员权限要求</span></div>
+      <div class="spec-row" data-i="3"><b>MIT</b><span data-i18n="s9.r4">开源许可 · 免费商用</span></div>
+    </div>
+  </section>
+
+  <!-- 10 OUTRO -->
+  <section class="scene" id="s10">
+    <div class="outro-glow" id="s10-glow"></div>
+    <div class="outro-logo" id="s10-logo"><img src="../assets/logo.png" alt="New7z"><div class="logo-sheen" id="s10-sheen"></div></div>
+    <div class="outro-word" id="s10-word"><span>New7z</span><em>新 7z</em></div>
+    <div class="outro-line" id="s10-line" data-i18n="outro.line">开源免费 · 为 Windows 11 而生</div>
+    <div class="outro-url" id="s10-url"><span>github.com/outsideoftime/new-7z</span></div>
+    <div class="micro outro-micro" id="s10-micro">v1.0.2 · WINDOWS 11 X64 · MIT</div>
+  </section>
+
+  <div id="sweep"></div>
+  <div id="grain"></div>
+  <div id="vignette"></div>
+</div>
+<script src="wide.js"></script>
+</body>
+</html>

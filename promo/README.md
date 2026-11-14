@@ -71,3 +71,28 @@ node promo/render.cjs --cover=true --lang=en
 - `cover.html`：封面版式，同样支持 `?lang=en`。
 
 改文案主要改 `promo.js` 的 `I18N`，改时间点改 `SCENES` 与各 `renderS*` 函数。
+
+## 横屏版（B 站 / YouTube · 1920×1080）
+
+`wide/` 下是 55 秒、1080p60 的横屏版，沿用竖屏版的视觉语言和配乐体系，文案是竖屏版的完善与延续：保留了「一个压缩软件，能有多讲究？」的开场，展开为简洁、实用、文件图标、个性化与安全五个部分。发布文案见 [wide/上传文案.md](wide/上传文案.md)。
+
+```bash
+node promo/wide/audio.cjs
+node promo/wide/render.cjs --fps=60 --lang=zh --duration=55 --out=new7z-promo-wide-zh-1080p-silent.mp4
+node promo/wide/render.cjs --fps=60 --lang=en --duration=55 --out=new7z-promo-wide-en-1080p-silent.mp4
+ffmpeg -y -i promo/out/new7z-promo-wide-zh-1080p-silent.mp4 -i promo/out/score-wide.wav \
+  -map 0:v -map 1:a -c:v copy -af loudnorm=I=-14:TP=-1.5:LRA=11 -c:a aac -b:a 192k -shortest \
+  promo/out/new7z-promo-bili-zh-1080p.mp4
+ffmpeg -y -i promo/out/new7z-promo-wide-en-1080p-silent.mp4 -i promo/out/score-wide.wav \
+  -map 0:v -map 1:a -c:v copy -af loudnorm=I=-14:TP=-1.5:LRA=11 -c:a aac -b:a 192k -shortest \
+  promo/out/new7z-promo-youtube-en-1080p.mp4
+node promo/wide/render.cjs --cover=cover-bili-1920x1080.png --lang=zh --cover-size=1920x1080
+node promo/wide/render.cjs --cover=cover-youtube-1280x720-en.png --lang=en --cover-size=1280x720
+```
+
+- `wide/index.html` / `wide.css` / `wide.js`：11 个章节的横屏时间轴，`renderAt(t)` 逐帧可复现；中英文案在 `wide.js` 顶部 `I18N`。
+- `wide/render.cjs`：1920×1080 视口，支持 `--still`、`--cover`、`--cover-size`，静态服务以 `promo/` 为根。
+- `wide/audio.cjs`：55 秒版配乐，与竖屏版同一套音色与和声，章节重击对齐剪辑点。
+- `wide/cover.html`：16:9 封面，支持 `?lang=en&w=1280&h=720`。
+- `wide/` 引用 `promo/assets/filetypes/` 下 42 个真实文件类型图标（来自 `src/New7z.App/Assets/FileTypes/`）。
+- 设置页、右键菜单为按应用视觉绘制的示意图；界面截图仍来自仓库内的中文界面素材。

@@ -14,7 +14,7 @@ public static class UpdateChecker
 {
     public const string LatestReleaseApi="https://api.github.com/repos/outsideoftime/new-7z/releases/latest";
     public const string ReleasesFeed="https://github.com/outsideoftime/new-7z/releases.atom";
-    public const string GiteeLatestReleaseApi="https://gitee.com/api/v5/repos/wgliangzero/new-7z/releases/latest";
+    public const string GiteeReleasesApi="https://gitee.com/api/v5/repos/wgliangzero/new-7z/releases";
     public const string GiteeReleaseDownloadBase="https://gitee.com/wgliangzero/new-7z/releases/download/";
     private static readonly HttpClient Client=CreateClient();
     private static HttpClient CreateClient()
@@ -77,15 +77,32 @@ public static class UpdateChecker
     }
     public static async Task<UpdateInfo?> CheckGiteeAsync(Version current,CancellationToken cancellation=default)
     {
-        using var response=await Client.GetAsync(GiteeLatestReleaseApi,cancellation);
+        // Gitee orders "latest" by creation time, so a backfilled older release can hide a
+        // newer one; list the releases and pick the highest version instead.
+        using var response=await Client.GetAsync(GiteeReleasesApi+"?per_page=30",cancellation);
         response.EnsureSuccessStatusCode();
         var text=await response.Content.ReadAsStringAsync(cancellation);
-        return ParseGiteeRelease(text,current);
+        return ParseGiteeReleases(text,current);
+    }
+    public static UpdateInfo? ParseGiteeReleases(string json,Version current)
+    {
+        using var document=JsonDocument.Parse(json);
+        if(document.RootElement.ValueKind!=JsonValueKind.Array)return ParseGiteeRelease(json,current);
+        UpdateInfo? best=null;
+        foreach(var release in document.RootElement.EnumerateArray())
+        {
+            var info=ParseGiteeRelease(release,current);
+            if(info!=null&&(best==null||info.Version>best.Version))best=info;
+        }
+        return best;
     }
     public static UpdateInfo? ParseGiteeRelease(string json,Version current)
     {
         using var document=JsonDocument.Parse(json);
-        var root=document.RootElement;
+        return ParseGiteeRelease(document.RootElement,current);
+    }
+    private static UpdateInfo? ParseGiteeRelease(JsonElement root,Version current)
+    {
         if(root.TryGetProperty("prerelease",out var prerelease)&&prerelease.ValueKind==JsonValueKind.True)return null;
         if(!root.TryGetProperty("tag_name",out var tagNode)||tagNode.GetString() is not { } tag)return null;
         if(!TryParseTag(tag,out var version)||Normalize(version)<=Normalize(current))return null;

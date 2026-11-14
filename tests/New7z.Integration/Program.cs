@@ -256,6 +256,8 @@ try
     Assert(giteeSourceOnly!=null&&giteeSourceOnly.InstallerUrl=="https://gitee.com/wgliangzero/new-7z/releases/download/v9.9.9/New7z-9.9.9-x64-Setup.exe","gitee source-only assets use the download path");
     Assert(UpdateChecker.ParseGiteeRelease("{\"tag_name\":\"v9.9.9\",\"prerelease\":true}",new Version(1,0,0))==null,"gitee prerelease is ignored");
     Assert(UpdateChecker.ParseGiteeRelease("{\"tag_name\":\"v1.0.0\"}",new Version(1,0,0))==null,"gitee release older than current is ignored");
+    var giteeList=UpdateChecker.ParseGiteeReleases("["+giteeRelease+",{\"tag_name\":\"v9.9.8\",\"prerelease\":false,\"assets\":[]}]",new Version(1,0,0));
+    Assert(giteeList!=null&&giteeList.Version==new Version(9,9,9),"gitee release list picks the highest version, not the newest release");
     foreach(var unsafePath in new[]{"../escape.txt","/absolute.txt","C:\\escape.txt","file.txt:ads","CON.txt","trailing. "})
     {try{ArchiveEngine.ResolveOutput(root,unsafePath);throw new Exception("Unsafe path accepted: "+unsafePath);}catch(IOException){checks.Add("reject "+unsafePath);}}
     var malicious=Path.Combine(root,"malicious.zip");using(var zip=ZipFile.Open(malicious,ZipArchiveMode.Create))

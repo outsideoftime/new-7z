@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/outsideoftime/new-7z?label=release)](https://github.com/outsideoftime/new-7z/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)](#)
 
-**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前正式版：**1.0.3**，Windows 11 x64。
+**New7z（新 7z）** 是一款面向 Windows 11 的开源免费压缩 / 解压软件，使用 WinUI 3 界面和完整的 7-Zip 引擎。支持创建 7z、ZIP、TAR，读取和解压 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 等常见压缩格式；中文/英文界面、本地离线运行，不需要另行安装 7-Zip 或 .NET 运行库。当前正式版：**1.0.4**，Windows 11 x64。
 
 [下载安装包](https://github.com/outsideoftime/new-7z/releases/latest) · [操作说明](docs/操作说明.md) · [MIT 许可](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md) · [安装与分发说明](docs/安装包发布.md)
 
@@ -13,7 +13,7 @@
 - 创建 7z、ZIP、TAR，7z/ZIP 支持密码与 7z 文件名加密；读取、解压和校验引擎支持的归档。设置中可选择默认格式，并分别指定 7z/ZIP 的默认压缩方法。
 - 压缩包内直接预览图片和文本/代码文件，常见源码、配置、脚本扩展名（.cs、.py、.rs、.toml、Makefile 等）都可当作文本查看；支持中文文件名、文件夹、多选解压。
 - 选中条目后可直接拖到资源管理器完成拖动解压；7z 和 ZIP 支持在包内添加文件、删除条目，写入采用临时文件校验后替换，失败或取消不影响原包。
-- 启动时自动从 GitHub Releases 检查并下载新版本，安装包按同版本 `SHA256SUMS.txt` 校验后询问安装；可在设置中关闭自动检查。
+- 启动时优先从 GitHub Releases 检查并下载新版本，GitHub 不可用时自动改用 Gitee 镜像；安装包按同版本 `SHA256SUMS.txt` 校验后询问安装；可在设置中关闭自动检查。
 - 资源管理器右键压缩/解压仅打开独立任务小窗口，不显示系统标题栏；成功后可手动或自动关闭，默认手动。
 - 设置中配置右键菜单总开关与八项命令，也可修复菜单注册。
 - 默认注册到 Windows「默认应用」及 7z、ZIP、RAR、TAR、GZ、XZ、BZ2、ISO 的「打开方式」；设置 → 文件关联 → **选择默认应用**，由用户选择默认格式。

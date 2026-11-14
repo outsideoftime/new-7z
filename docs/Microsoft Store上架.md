@@ -57,7 +57,7 @@ pwsh -File scripts/build-msix.ps1 -RequireStoreIdentity
 
 | 项目 | GitHub（Inno 安装包） | Microsoft Store（MSIX） |
 |---|---|---|
-| 更新方式 | 应用内从 GitHub Releases 自更新 | 由 Store 自动更新，应用内不检查 |
+| 更新方式 | 应用内优先从 GitHub Releases 自更新，失败时使用 Gitee 镜像 | 由 Store 自动更新，应用内不检查 |
 | 文件关联 | `Integrate-Shell.ps1` 写注册表 | 包清单声明，自动出现在「打开方式」 |
 | 资源管理器右键菜单 | 支持 | 支持（打包 COM 扩展） |
 | 安装位置 | `%LOCALAPPDATA%\Programs\New7z` | `WindowsApps`（只读） |

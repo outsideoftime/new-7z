@@ -247,8 +247,15 @@ try
     var unsupportedFile=Path.Combine(root,"note.txt");await File.WriteAllTextAsync(unsupportedFile,"x");
     var updateRefused=false;try{await engine.ModifyAsync(unsupportedFile,[],ArchiveEngine.ExpandSources([text]));}catch(IOException){updateRefused=true;}
     Assert(updateRefused,"update refuses non-archive paths");
-    Assert(GitHubUpdateChecker.TryParseTag("v0.1.16",out var releaseVersion)&&releaseVersion==new Version(0,1,16),"update release tag parses");
-    Assert(!GitHubUpdateChecker.TryParseTag("nightly",out _),"update release tag rejects non-version tags");
+    Assert(UpdateChecker.TryParseTag("v0.1.16",out var releaseVersion)&&releaseVersion==new Version(0,1,16),"update release tag parses");
+    Assert(!UpdateChecker.TryParseTag("nightly",out _),"update release tag rejects non-version tags");
+    var giteeRelease="{\"tag_name\":\"v9.9.9\",\"prerelease\":false,\"body\":\"notes\",\"assets\":[{\"name\":\"New7z-9.9.9-x64-Setup.exe\",\"browser_download_url\":\"https://gitee.com/wgliangzero/new-7z/releases/download/v9.9.9/New7z-9.9.9-x64-Setup.exe\"},{\"name\":\"SHA256SUMS.txt\",\"browser_download_url\":\"https://gitee.com/wgliangzero/new-7z/releases/download/v9.9.9/SHA256SUMS.txt\"}]}";
+    var gitee=UpdateChecker.ParseGiteeRelease(giteeRelease,new Version(1,0,0));
+    Assert(gitee!=null&&gitee.Version==new Version(9,9,9)&&gitee.InstallerName=="New7z-9.9.9-x64-Setup.exe"&&gitee.ChecksumsUrl!.EndsWith("/SHA256SUMS.txt"),"gitee release parses uploaded assets");
+    var giteeSourceOnly=UpdateChecker.ParseGiteeRelease("{\"tag_name\":\"v9.9.9\",\"prerelease\":false,\"assets\":[{\"name\":\"v9.9.9.zip\",\"browser_download_url\":\"https://gitee.com/wgliangzero/new-7z/archive/refs/tags/v9.9.9.zip\"}]}",new Version(1,0,0));
+    Assert(giteeSourceOnly!=null&&giteeSourceOnly.InstallerUrl=="https://gitee.com/wgliangzero/new-7z/releases/download/v9.9.9/New7z-9.9.9-x64-Setup.exe","gitee source-only assets use the download path");
+    Assert(UpdateChecker.ParseGiteeRelease("{\"tag_name\":\"v9.9.9\",\"prerelease\":true}",new Version(1,0,0))==null,"gitee prerelease is ignored");
+    Assert(UpdateChecker.ParseGiteeRelease("{\"tag_name\":\"v1.0.0\"}",new Version(1,0,0))==null,"gitee release older than current is ignored");
     foreach(var unsafePath in new[]{"../escape.txt","/absolute.txt","C:\\escape.txt","file.txt:ads","CON.txt","trailing. "})
     {try{ArchiveEngine.ResolveOutput(root,unsafePath);throw new Exception("Unsafe path accepted: "+unsafePath);}catch(IOException){checks.Add("reject "+unsafePath);}}
     var malicious=Path.Combine(root,"malicious.zip");using(var zip=ZipFile.Open(malicious,ZipArchiveMode.Create))

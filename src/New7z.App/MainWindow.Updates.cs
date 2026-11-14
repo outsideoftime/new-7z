@@ -23,7 +23,7 @@ public sealed partial class MainWindow
         }
         var section=Stack(12);
         section.Children.Add(Text(T("应用更新","App updates"),18,true));
-        section.Children.Add(Text(T($"当前版本 {AppVersion.ToString(3)} · 从 GitHub Releases 检查最新版本，下载后校验 SHA-256 再安装。",$"Current version {AppVersion.ToString(3)} · checks GitHub Releases, verifies SHA-256, then installs."),12));
+        section.Children.Add(Text(T($"当前版本 {AppVersion.ToString(3)} · 优先从 GitHub Releases 检查最新版本，失败时改用 Gitee 镜像；下载后校验 SHA-256 再安装。",$"Current version {AppVersion.ToString(3)} · checks GitHub Releases first and falls back to the Gitee mirror; verifies SHA-256, then installs."),12));
         var auto=new ToggleSwitch{Header=T("启动时自动检查并下载更新","Check and download updates at startup"),IsOn=settings.AutoCheckUpdates,OnContent=T("开","On"),OffContent=T("关","Off")};
         auto.Toggled+=(_,_)=>{settings.AutoCheckUpdates=auto.IsOn;settings.Save();};
         section.Children.Add(auto);
@@ -38,7 +38,7 @@ public sealed partial class MainWindow
         try
         {
             if(interactive)StatusText.Text=T("正在检查更新…","Checking for updates…");
-            var update=await GitHubUpdateChecker.CheckAsync(AppVersion);
+            var update=await UpdateChecker.CheckAsync(AppVersion);
             if(update==null){if(interactive)Notify(T($"已是最新版本（{AppVersion.ToString(3)}）。",$"You have the latest version ({AppVersion.ToString(3)})."),InfoBarSeverity.Success);return;}
             if(!interactive){await DownloadAndPromptAsync(update,true);return;}
             var panel=Stack(12);
@@ -46,7 +46,7 @@ public sealed partial class MainWindow
             var notes=Text(string.IsNullOrWhiteSpace(update.Notes)?T("（该版本没有发布说明）","(No release notes for this version)"):update.Notes,12);
             notes.TextWrapping=TextWrapping.Wrap;
             panel.Children.Add(new ScrollViewer{Content=notes,MaxHeight=260,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
-            panel.Children.Add(Text(T("安装包从 GitHub Releases 下载，运行前会与同版本发布的 SHA256SUMS.txt 比对。","The installer is downloaded from GitHub Releases and verified against SHA256SUMS.txt before running."),12));
+            panel.Children.Add(Text(T("安装包优先从 GitHub Releases 下载，失败时改用 Gitee 镜像；运行前会与同版本发布的 SHA256SUMS.txt 比对。","The installer is downloaded from GitHub Releases, falling back to the Gitee mirror; it is verified against SHA256SUMS.txt before running."),12));
             var dialog=Dialog(T("发现新版本 ","New version ")+update.Version.ToString(3),new ScrollViewer{Content=panel,MaxWidth=560},T("下载并安装","Download and install"));
             if(await ShowDialogAsync(dialog)!=ContentDialogResult.Primary)return;
             await DownloadAndPromptAsync(update,false);
@@ -61,12 +61,12 @@ public sealed partial class MainWindow
         {
             if(jobs.Any(j=>j.CanCancel)){if(!silent)Notify(T("有任务正在运行，完成后再安装更新。","Tasks are running; install the update after they finish."),InfoBarSeverity.Warning);return;}
             var verified=false;
-            if(File.Exists(target)){try{verified=await GitHubUpdateChecker.VerifyChecksumAsync(update,target);}catch{}}
+            if(File.Exists(target)){try{verified=await UpdateChecker.VerifyChecksumAsync(update,target);}catch{}}
             if(!verified)
             {
                 var progress=new Progress<double>(percent=>{Message.Message=T($"正在下载 New7z {update.Version.ToString(3)} · {percent:0}%",$"Downloading New7z {update.Version.ToString(3)} · {percent:0}%");Message.Severity=InfoBarSeverity.Informational;Message.ActionButton=null;Message.IsOpen=true;});
-                await GitHubUpdateChecker.DownloadAsync(update,target,progress);
-                if(!await GitHubUpdateChecker.VerifyChecksumAsync(update,target))
+                await UpdateChecker.DownloadAsync(update,target,progress);
+                if(!await UpdateChecker.VerifyChecksumAsync(update,target))
                 {
                     try{File.Delete(target);}catch{}
                     Notify(T("更新包校验失败，已丢弃下载内容。","Update verification failed; the download was discarded."),InfoBarSeverity.Error);
